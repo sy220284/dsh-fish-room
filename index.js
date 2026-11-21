@@ -370,7 +370,7 @@ export function apply(ctx, config) {
                     }
                 }
             } catch (e) {
-                if (stopped) break
+                if (stopped || st.gen !== myGen) break
                 st.connected = false
                 broadcast(st, { type: 'status', connected: false })
                 log('订阅断开，3 秒后重连：', e?.message || e)
@@ -793,6 +793,117 @@ export function apply(ctx, config) {
         presenceTimer.unref?.()
     }
 
+    // ── 设置变更实时应用到已经启动的房间 ────────────────────
+    function validateSettings(rooms) {
+        if (!Array.isArray(rooms) || !rooms.length) return '至少保留一个房间'
+        if (rooms.length > 32) return '最多可配置 32 个房间'
+        const names = new Set()
+        const originals = new Set()
+        for (const r of rooms) {
+            const room = String(r.name || '').trim()
+            if (!room || room.length > 64 || /[\/\\?#\x00-\x1f]/.test(room) || room === '..') return '房间名称不合法'
+            if (names.has(room)) return '房间名称重复：' + room
+            names.add(room)
+            const original = String(r.originalName || '').trim()
+            if (original && originals.has(original)) return '同一房间被重复引用：' + original
+            if (original) originals.add(original)
+            if (!String(r.displayName || '').trim()) return '房间「' + room + '」缺少显示名字'
+            try {
+                const url = new URL(String(r.server || ''))
+                if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password)
+                    return '房间「' + room + '」的中继地址无效'
+            } catch { return '房间「' + room + '」的中继地址无效' }
+            const topic = String(r.topic || '')
+            if (topic && (topic.length > 128 || /[\/\\?#\x00-\x1f]/.test(topic)))
+                return '房间「' + room + '」的中继主题不合法'
+            for (const [field, min, max] of [['maxRounds', 0, 6], ['cooldownSec', 0, 300], ['turnTimeoutSec', 15, 600]]) {
+                const n = Number(r[field])
+                if (!Number.isInteger(n) || n < min || n > max) return '房间「' + room + '」的' + field + '超出范围'
+            }
+        }
+        return ''
+    }
+
+    function retireRoom(st) {
+        st.gen++
+        st.connected = false
+        if (st.reader) {
+            try { void Promise.resolve(st.reader.cancel()).catch(e => log('关闭中继连接失败：', e?.message || e)) }
+            catch (e) { log('关闭中继连接失败：', e?.message || e) }
+            st.reader = null
+        }
+        if (st.handle) {
+            try { void Promise.resolve(st.handle.dispose?.()).catch(e => log('关闭房间 Agent 失败：', e?.message || e)) }
+            catch (e) { log('关闭房间 Agent 失败：', e?.message || e) }
+            st.handle = null
+            st.promise = null
+        }
+    }
+
+    function applyRoomSettings(configs, requests) {
+        const previous = new Map(states)
+        const active = new Map()
+        const restart = new Set()
+        for (let i = 0; i < configs.length; i++) {
+            const cfg = configs[i]
+            const requested = requests[i]
+            const oldName = String(requested.originalName || cfg.name)
+            const reused = oldName === cfg.name ? previous.get(oldName) : null
+            if (!reused) {
+                const st = makeState(cfg)
+                st.instanceId = instanceId
+                loadHistory(st)
+                active.set(cfg.name, st)
+                restart.add(cfg.name)
+                continue
+            }
+            const old = reused.cfg
+            const connectionChanged = old.server !== cfg.server || old.transport !== cfg.transport ||
+                old.topic !== cfg.topic || old.passphrase !== cfg.passphrase
+            const cursorChanged = old.server !== cfg.server || old.transport !== cfg.transport || old.topic !== cfg.topic
+            const agentChanged = old.provider !== cfg.provider || old.model !== cfg.model || old.cwd !== cfg.cwd
+            reused.cfg = cfg
+            reused.secret = createHash('sha256').update(String(cfg.passphrase || cfg.name)).digest()
+            if (agentChanged && reused.handle) {
+                const handle = reused.handle
+                reused.handle = null
+                reused.promise = null
+                try { void Promise.resolve(handle.dispose?.()).catch(e => log('重启房间 Agent 失败：', e?.message || e)) }
+                catch (e) { log('重启房间 Agent 失败：', e?.message || e) }
+            }
+            if (connectionChanged) {
+                reused.gen++
+                reused.connected = false
+                if (cursorChanged) {
+                    reused.cursor = {}
+                    writeFileSync(join(DATA_DIR, 'cursor-' + cfg.name + '.json'), '{}', 'utf8')
+                }
+                if (reused.reader) {
+                    try { void Promise.resolve(reused.reader.cancel()).catch(e => log('断开旧中继连接失败：', e?.message || e)) }
+                    catch (e) { log('断开旧中继连接失败：', e?.message || e) }
+                    reused.reader = null
+                }
+                restart.add(cfg.name)
+            }
+            active.set(cfg.name, reused)
+        }
+        for (const [name, st] of previous) {
+            if (active.get(name) === st) continue
+            retireRoom(st)
+            delete GLOBAL.rooms[name]
+        }
+        states.clear()
+        for (const [name, st] of active) {
+            states.set(name, st)
+            GLOBAL.rooms[name] = { instanceId: st.instanceId, dispose }
+        }
+        for (const [name, st] of active) {
+            if (restart.has(name)) void subscribe(st)
+            broadcast(st, { type: 'status', connected: st.connected })
+        }
+        log('房间配置已应用：', [...states.keys()].join('、'))
+    }
+
     // ── HTTP ───────────────────────────────────────────────
     function isTrusted(req) {
         const h = req.headers?.host
@@ -936,26 +1047,41 @@ export function apply(ctx, config) {
                 writeJson(res, 200, { ok: true, rooms: [...states.values()].map(publicRoom) })
                 return
             }
+            if (String(req.method).toUpperCase() !== 'POST') {
+                writeJson(res, 405, { error: '不支持该请求方法' })
+                return
+            }
             const body = await readBody(req)
             const list = Array.isArray(body.rooms) ? body.rooms : []
-            if (!list.length) { writeJson(res, 400, { error: '至少要一个房间' }); return }
-            const prevByName = new Map([...states.values()].map(st => [st.cfg.name, st.cfg]))
+            const previousByName = new Map([...states.values()].map(st => [st.cfg.name, st.cfg]))
             const merged = list.map(r => {
-                const old = prevByName.get(String(r.name || ''))
-                const p = r.passphrase
-                const keep = (!p || p === '******') && old ? old.passphrase : p
-                return Object.assign({}, r, { passphrase: keep || '' })
+                const origin = String(r.originalName || r.name || '').trim()
+                const old = previousByName.get(origin)
+                const value = r.passphrase
+                const secret = (!value || value === '******') && old ? old.passphrase : value
+                return {
+                    ...r,
+                    name: String(r.name || '').trim(),
+                    displayName: String(r.displayName || '').trim(),
+                    server: String(r.server || '').trim().replace(/\/+$/, ''),
+                    passphrase: secret && secret !== '******' ? secret : '',
+                    allow: Array.isArray(r.allow) ? r.allow : [],
+                    deny: Array.isArray(r.deny) ? r.deny : [],
+                }
             })
+            const problem = validateSettings(merged)
+            if (problem) { writeJson(res, 400, { error: problem }); return }
             const next = normalizeRooms({ rooms: merged }, {})
             try {
                 mkdirSync(DATA_DIR, { recursive: true })
                 writeFileSync(ROOM_JSON, JSON.stringify({ rooms: next }, null, 2), 'utf8')
                 chmodSync(ROOM_JSON, 0o600)
+                applyRoomSettings(next, list)
             } catch (e) {
-                writeJson(res, 500, { error: `写配置失败：${e?.message || e}` })
+                writeJson(res, 500, { error: '保存或应用房间配置失败：' + (e?.message || e) })
                 return
             }
-            writeJson(res, 200, { ok: true, rooms: next.map(r => ({ ...r, passphrase: r.passphrase ? '******' : '' })) })
+            writeJson(res, 200, { ok: true, rooms: [...states.values()].map(publicRoom) })
         })
 
         reg('/fish-room/send', async (req, res) => {
