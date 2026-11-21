@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync, mkdirSync } from 'node:fs'
+import { personaPreviewCatalog } from '../index.js'
 import { createServer } from 'node:http'
 import { chromium } from 'playwright-core'
 import { createRequire } from 'node:module'
@@ -24,21 +25,17 @@ const messages=[
 ]
 const rooms=[{name:'海湾讨论',connected:true},{name:'协作试验',connected:true},{name:'归档回看',connected:false}]
 const members=[{name:'小青鱼',online:true},{name:'白鲸助手',online:true},{name:'海岸观察员',online:false}]
-const personaChoices=[
-  ['follow','跟随智能体','standard'],
-  ['friendly','自然随和','standard'],['caring','温柔体贴','standard'],
-  ['analytical','理性清晰','standard'],['playful','轻松幽默','standard'],
-  ['concise','简洁干练','standard'],['curious','好奇探索','standard'],
-  ['tieba_bro','贴吧老哥','tieba'],['tieba_hot','贴吧神评','tieba'],
-  ['tieba_fun','贴吧乐子人','tieba'],
-  ['thunder_absurd','抽象','thunder'],['thunder_roast','锐评','thunder'],
-  ['thunder_sarcasm','阴阳','thunder'],['thunder_rant','暴躁','thunder'],
-  ['thunder_tough','嘴硬','thunder'],['thunder_drama','戏精','thunder'],
-  ['thunder_riddle','谜语人','thunder'],['thunder_meme','梗王','thunder'],
-  ['custom','自定义人设','custom'],
-].map(([id,label,group])=>({id,label,group,
-  description:group==='thunder'?'充满戏剧反差的雷霆系对话':group==='tieba'?'贴吧社区特色聊天':'跟随或自选的表达方式',
-  example:'一句贴合角色特点的聊天回复'}))
+const personaChoices=personaPreviewCatalog
+
+const uiGroups=[
+  {id:'standard',label:'常用',count:7},
+  {id:'tieba',label:'贴吧',count:3},
+  {id:'thunder',label:'雷霆',count:8},
+  {id:'custom',label:'自定义',count:1},
+]
+const uiSettings={personaGroups:uiGroups,maxRooms:32,maxPersonaLength:2000,
+  sections:['房间信息','连接设置','聊天与自动接话','成员与权限','高级设置']}
+
 let lastSettingsPayload=null
 let settingsRooms=rooms.map(r=>({...r,displayName:'本机小鱼',server:'https://ntfy.sh',transport:'ntfy',topic:'dsh-room-'+r.name,personaPreset:'follow',persona:'',
   hasPassphrase:true,persona:'聊天简短清楚',autoReply:true,maxRounds:2,cooldownSec:15,turnTimeoutSec:180,
@@ -49,7 +46,7 @@ const server=createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store')
   if(url.pathname==='/host'){
     res.setHeader('Content-Type','text/html; charset=utf-8')
-    res.end('<!doctype html><html lang="zh-CN"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link href="/fish-room/ui.css" rel="stylesheet"></head><body style="margin:0;background:#111a1c;color:#edf4f0"><main id="dsh-host"></main></body></html>');return
+    res.end('<!doctype html><html lang="zh-CN"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link href="/fish-room/ui.css" rel="stylesheet"></head><body style="margin:0;background:#0d191f;color:#e9f4f3"><main id="dsh-host"></main></body></html>');return
   }
   if(url.pathname==='/fish-room/settings'){
     res.setHeader('Content-Type','application/json; charset=utf-8')
@@ -58,15 +55,19 @@ const server=createServer(async(req,res)=>{
       lastSettingsPayload=JSON.parse(Buffer.concat(chunks).toString('utf8'))
       settingsRooms=lastSettingsPayload.rooms.map(r=>({...r,hasPassphrase:!!r.passphrase,connected:true}))
     }
-    res.end(JSON.stringify({ok:true,rooms:settingsRooms,personas:personaChoices}));return
+    res.end(JSON.stringify({ok:true,schemaVersion:2,ui:uiSettings,rooms:settingsRooms,personas:personaChoices}));return
   }
   if(url.pathname==='/fish-room'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(pageHtml);return}
   if(url.pathname==='/fish-room/ui.css'){res.setHeader('Content-Type','text/css; charset=utf-8');res.end(css);return}
   if(url.pathname==='/fish-room/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store'});res.write(': alive\n\n');req.on('close',()=>res.end());return}
   if(url.pathname==='/fish-room/state'){
     res.setHeader('Content-Type','application/json')
-    res.end(JSON.stringify({ok:true,room:url.searchParams.get('room')||rooms[0].name,rooms,me:{id:'self',name:'我'},
-      messages,members,config:{connected:true,typing:false}}));return
+    res.end(JSON.stringify({ok:true,schemaVersion:2,
+      room:url.searchParams.get('room')||rooms[0].name,rooms:rooms.map(r=>({name:r.name,connected:r.connected})),
+      me:{id:'self',name:'我'},messages,members,
+      config:{connected:true,typing:false,draft:'',personaLabel:'跟随智能体'},
+      ui:{connection:{state:'online',label:'已连接',detail:'房间通讯正常'},
+        presence:{online:2,total:3},persona:{id:'follow',label:'跟随智能体'}}}));return
   }
   if(url.pathname==='/fish-room/history'){
     const q=url.searchParams.get('q')||''
@@ -78,6 +79,10 @@ const server=createServer(async(req,res)=>{
     const chunks=[]
     for await(const chunk of req)chunks.push(chunk)
     const data=JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    if(data.text==='模拟发送失败'){
+      res.writeHead(503,{'Content-Type':'application/json'})
+      res.end('{"ok":false,"error":"中继暂时不可用，请重试"}');return
+    }
     messages.push({id:String(messages.length+1),from:'self',fromName:'我',kind:'human',ts:Date.now(),text:data.text})
     res.setHeader('Content-Type','application/json');res.end('{"ok":true}');return
   }
@@ -177,8 +182,29 @@ try {
       assert.ok(metrics.subtitle.bottom<metrics.actionBar.top,name+' 文字和操作按钮应分行显示，避免标题被挤压')
       assert.ok(metrics.actionBar.right<=width+1,name+' 右侧操作区必须在手机屏幕内')
     }
+    if(name==='embedded-mobile'){
+      await page.getByRole('button',{name:'搜索聊天记录'}).click()
+      await page.getByRole('searchbox',{name:'搜索消息'}).fill('不存在的检索条件')
+      await page.locator('.fr-search-submit').click()
+      await page.getByText('没有找到相关消息').waitFor()
+      await page.screenshot({path:'screenshots/embedded-mobile-search-empty.png',fullPage:false})
+      await page.locator('.fr-close-search').click()
+      await page.getByRole('button',{name:'查看'}).click()
+      await page.locator('.fr-members-open').waitFor()
+      await page.screenshot({path:'screenshots/embedded-mobile-members-expanded.png',fullPage:false})
+      await page.getByRole('button',{name:'收起'}).click()
+      await page.getByRole('textbox',{name:'输入聊天消息'}).fill('模拟发送失败')
+      await page.locator('.fr-send').click()
+      await page.getByText('中继暂时不可用，请重试').waitFor()
+      assert.equal(await page.getByRole('textbox',{name:'输入聊天消息'}).inputValue(),'模拟发送失败',
+        '发送失败必须保留草稿')
+      await page.screenshot({path:'screenshots/embedded-mobile-send-error.png',fullPage:false})
+      await page.getByRole('textbox',{name:'输入聊天消息'}).fill('')
+    }
     await page.getByRole('button',{name:'房间设置'}).click()
     await page.locator('.fr-settings-overlay .fr-settings').waitFor()
+    await page.locator('.fr-settings-overlay .fr-settings-card').first().waitFor()
+    await page.locator('.fr-settings-overlay .fr-settings-toolbar').waitFor()
     await page.screenshot({path:'screenshots/'+name+'-settings.png',fullPage:true})
     await page.screenshot({path:'screenshots/'+name+'-settings-viewport.png',fullPage:false})
     const settingsLayout=await page.evaluate(()=>({width:document.documentElement.scrollWidth,viewport:innerWidth,
@@ -240,6 +266,8 @@ try {
   await mountDsh(settingsPage,'settings.section')
   await settingsPage.getByRole('heading',{name:'鱼房间设置'}).waitFor()
   assert.equal(await settingsPage.locator('.fr-settings-card').count(),5,'DSH 原设置分区应展示完整的设置结构')
+  assert.equal(await settingsPage.locator('.fr-settings-jump-button').count(),5,
+    '所有设置章节必须可直接定位')
   assert.equal(await settingsPage.locator('.fr-persona-choice').count(),1,'设置分区应自动定位已保存的自定义人设')
   await settingsPage.getByRole('tab',{name:/常用/}).click()
   assert.equal(await settingsPage.locator('.fr-persona-choice').count(),7,'DSH 设置分区常用人设应有 7 款')
@@ -247,8 +275,23 @@ try {
   assert.equal(await settingsPage.locator('.fr-persona-choice').count(),3,'DSH 设置分区应包含贴吧风格')
   await settingsPage.getByRole('tab',{name:/雷霆/}).click()
   assert.equal(await settingsPage.locator('.fr-persona-choice').count(),8,'DSH 设置分区应包含全部雷霆风格')
+  await settingsPage.locator('input[type="radio"][value="thunder_riddle"]').check()
+  assert.match(await settingsPage.locator('.fr-persona-preview').textContent(),/语气预览/,
+    '选中人设后应展示来自接口的单独示例')
   await settingsPage.screenshot({path:'screenshots/dsh-settings-section-thunder.png',fullPage:true})
   await settingsPage.screenshot({path:'screenshots/dsh-settings-section.png',fullPage:true})
+  await settingsPage.getByRole('button',{name:/成员与权限/}).click()
+  assert.equal(await settingsPage.locator('[data-room-section="4"]').getAttribute('open'),'',
+    '点击章节快捷导航应自动展开折叠设置')
+  await settingsPage.screenshot({path:'screenshots/dsh-settings-member-permissions.png',fullPage:false})
+  await settingsPage.getByRole('tab',{name:/协作试验/}).click()
+  await settingsPage.locator('#fish-setting-1-displayName').fill('房间二专属昵称')
+  await settingsPage.locator('.fr-settings-submit').click()
+  await settingsPage.getByText('配置已保存并应用，连接状态会在页面中更新').waitFor()
+  assert.equal(await settingsPage.getByRole('tab',{name:/协作试验/}).getAttribute('aria-selected'),'true',
+    '保存第二个房间设置后应保持当前选中房间')
+  assert.equal(await settingsPage.locator('#fish-setting-1-displayName').inputValue(),'房间二专属昵称')
+  await settingsPage.screenshot({path:'screenshots/dsh-settings-second-room-saved.png',fullPage:false})
   await settingsPage.close()
 } finally {
   await browser.close()

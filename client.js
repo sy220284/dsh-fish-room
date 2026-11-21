@@ -18,82 +18,41 @@ window.__ModuleLoader__.load({
 
     var PANEL_ID = 'fish-room'
 
-    var C = {
-      card: 'var(--dsw-alias-bg-primary, #1b1d22)',
-      card2: 'var(--dsw-alias-bg-secondary, #23262c)',
-      line: 'var(--dsw-alias-border-l2, rgba(128,128,128,0.28))',
-      fg: 'var(--dsw-alias-text-primary, #e9e9ec)',
-      sub: 'var(--dsw-alias-text-secondary, #9a9aa2)',
-      accent: 'var(--dsw-alias-accent, #4a7dff)',
-      mine: 'var(--dsw-alias-accent-soft, #2b3550)',
-      agent: 'var(--dsw-alias-accent-softer, #2a2440)',
-    }
-
-    var s = {
-      card: {
-        maxWidth: 860, margin: '0 auto', padding: '18px 20px 22px', display: 'flex',
-        flexDirection: 'column', gap: 12, fontSize: 13.5, lineHeight: 1.65, color: C.fg,
-      },
-      head: { display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' },
-      title: { fontSize: 17, fontWeight: 650 },
-      chip: {
-        fontSize: 11.5, color: C.sub, background: C.card2, border: '1px solid ' + C.line,
-        borderRadius: 999, padding: '2px 9px',
-      },
-      dot: { width: 8, height: 8, borderRadius: 999, background: '#666' },
-      dotOn: { width: 8, height: 8, borderRadius: 999, background: '#3ddc84' },
-      tab: {
-        whiteSpace: 'nowrap', border: '1px solid ' + C.line, background: C.card2, color: C.sub,
-        borderRadius: 999, padding: '4px 12px', fontSize: 12, cursor: 'pointer',
-      },
-      tabOn: { borderColor: C.accent, color: C.fg },
-      list: {
-        display: 'flex', flexDirection: 'column', gap: 9, minHeight: 200, maxHeight: '50vh',
-        overflowY: 'auto', padding: '4px 2px',
-      },
-      msg: {
-        maxWidth: '78%', borderRadius: 13, padding: '8px 12px', background: C.card2,
-        border: '1px solid ' + C.line, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-      },
-      msgMine: {
-        maxWidth: '78%', borderRadius: 13, padding: '8px 12px', background: C.mine,
-        border: '1px solid ' + C.line, whiteSpace: 'pre-wrap', wordBreak: 'break-word', alignSelf: 'flex-end',
-      },
-      msgAgent: { borderColor: 'rgba(122,92,255,0.55)' },
-      msgGuest: { borderStyle: 'dashed' },
-      who: { fontSize: 11, color: C.sub, marginBottom: 3 },
-      time: { fontSize: 10.5, color: C.sub, marginTop: 4, textAlign: 'right' },
-      input: {
-        flex: 1, minHeight: 44, maxHeight: 150, resize: 'none', padding: '11px 12px', borderRadius: 12,
-        border: '1px solid ' + C.line, background: C.card2, color: C.fg, font: 'inherit', lineHeight: 1.5,
-      },
-      btn: {
-        padding: '10px 18px', borderRadius: 12, border: '1px solid ' + C.accent,
-        background: C.accent, color: '#fff', fontSize: 13.5, cursor: 'pointer',
-      },
-      ghost: {
-        padding: '6px 12px', borderRadius: 9, border: '1px solid ' + C.line,
-        background: 'transparent', color: C.sub, fontSize: 12, cursor: 'pointer',
-      },
-      field: {
-        width: '100%', padding: '9px 11px', borderRadius: 10, border: '1px solid ' + C.line,
-        background: C.card2, color: C.fg, font: 'inherit',
-      },
-      label: { fontSize: 12, color: C.sub, margin: '11px 0 5px' },
-      hint: { fontSize: 11.5, color: C.sub, opacity: 0.85 },
-      err: { fontSize: 12, color: '#e55' },
-      ok: { fontSize: 12, color: '#4ad07a' },
-      media: { marginTop: 6, fontSize: 12 },
-      img: { maxWidth: 220, borderRadius: 8, display: 'block', marginTop: 6 },
-    }
-
     function fmtTime(ts) {
       var d = new Date(ts || Date.now())
       return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
     }
 
+    // 接口边界统一检查 HTTP 状态、响应结构和版本，页面只消费可靠数据。
     function api(path, opts) {
-      return fetch(path, opts).then(function (r) { return r.json().catch(function () { return {} }) })
+      return fetch(path, opts).then(function (response) {
+        return response.json().catch(function () { throw new Error('服务响应格式错误，请刷新后重试') })
+          .then(function (body) {
+            if (!response.ok || !body || body.ok !== true) {
+              throw new Error(body && body.error || '请求失败，请重试')
+            }
+            return body
+          })
+      })
+    }
+
+    function chatView(response) {
+      if (response.schemaVersion !== 2 ||
+          !Array.isArray(response.rooms) || !Array.isArray(response.members) ||
+          !Array.isArray(response.messages) || !response.config ||
+          !response.ui || !response.ui.connection || !response.ui.presence || !response.ui.persona) {
+        throw new Error('聊天数据版本不匹配，请刷新 DSH 后重试')
+      }
+      return response
+    }
+
+    function settingsView(response) {
+      if (response.schemaVersion !== 2 || !Array.isArray(response.rooms) ||
+          !Array.isArray(response.personas) || !response.personas.length ||
+          !response.ui || !Array.isArray(response.ui.personaGroups)) {
+        throw new Error('设置数据版本不匹配，请刷新 DSH 后重试')
+      }
+      return response
     }
 
     function mediaNodes(m) {
@@ -102,19 +61,60 @@ window.__ModuleLoader__.load({
         var src = x.url || (x.data ? 'data:' + (x.type || 'application/octet-stream') + ';base64,' + x.data : '')
         if (!src) return null
         if ((x.type || '').indexOf('image/') === 0) {
-          return h('img', { key: i, src: src, style: s.img, alt: x.name || 'image' })
+          return h('img', { key: i, src: src, className: 'fr-media-image', loading: 'lazy', alt: x.name || '图片附件' })
         }
         if ((x.type || '').indexOf('audio/') === 0) {
-          return h('div', { key: i, style: s.media },
+          return h('div', { key: i, className: 'fr-media-row' },
             h('audio', { controls: true, src: src }),
-            h('a', { href: src, target: '_blank', rel: 'noopener noreferrer', style: { marginLeft: 8, color: C.accent } }, x.name || '语音'))
+            h('a', { href: src, target: '_blank', rel: 'noopener noreferrer', className: 'fr-media-link' }, x.name || '语音'))
         }
-        return h('div', { key: i, style: s.media },
-          h('a', { href: src, target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent } }, '📎 ' + (x.name || '文件')))
+        return h('div', { key: i, className: 'fr-media-row' },
+          h('a', { href: src, target: '_blank', rel: 'noopener noreferrer', className: 'fr-media-link' }, '📎 ' + (x.name || '文件')))
       })
     }
 
+    // 页面组件接收已归一化的 UI 契约，由显示层负责文案、状态和交互。
+    function ConnectionBadge(props) {
+      var connection = props.connection
+      return h('span', { className: 'fr-status' + (connection.state === 'online' ? ' is-on' : ''),
+        role: 'status', 'aria-label': '房间连接状态：' + connection.label }, connection.label)
+    }
+
+    function PersonaChoice(props) {
+      var choice = props.choice
+      return h('label', { className: 'fr-persona-choice' + (props.selected ? ' is-selected' : '') },
+        h('span', { className: 'fr-persona-choice-top' },
+          h('input', { type: 'radio', name: props.radioName, value: choice.id,
+            checked: props.selected, onChange: props.onSelect }),
+          h('strong', null, choice.label)),
+        h('span', { className: 'fr-persona-desc' }, choice.description)
+      )
+    }
+
     // ── 聊天工作区：两个入口共用 /fish-room/ui.css 的视觉系统 ──
+    // 全部操作图标使用相同的线宽与 20px 绘制框，避免操作栏混用字符与 emoji。
+    function UiGlyph(props) {
+      var base = { width: 17, height: 17, viewBox: '0 0 24 24', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }
+      if (props.name === 'search') return h('svg', base,
+        h('circle', { cx: 10.8, cy: 10.8, r: 6.2 }),
+        h('path', { d: 'm16 16 4.8 4.8' }))
+      if (props.name === 'refresh') return h('svg', base,
+        h('path', { d: 'M20 11a8 8 0 0 0-14.9-3.5L3.5 10' }),
+        h('path', { d: 'M3.5 4.5V10H9' }),
+        h('path', { d: 'M4 13a8 8 0 0 0 14.9 3.5L20.5 14' }),
+        h('path', { d: 'M15 14h5.5v5.5' }))
+      if (props.name === 'export') return h('svg', base,
+        h('path', { d: 'M12 3v12' }),
+        h('path', { d: 'm7.5 10.5 4.5 4.5 4.5-4.5' }),
+        h('path', { d: 'M4 16v4h16v-4' }))
+      return h('svg', base,
+        h('path', { d: 'M4 6h16M4 12h16M4 18h16' }),
+        h('circle', { cx: 9, cy: 6, r: 2, fill: 'var(--fr-rail)' }),
+        h('circle', { cx: 15, cy: 12, r: 2, fill: 'var(--fr-rail)' }),
+        h('circle', { cx: 10, cy: 18, r: 2, fill: 'var(--fr-rail)' }))
+    }
+
     function ChatPanel() {
       var state = useState({ ok: false, rooms: [], messages: [], members: [], me: { id: '' } })
       var data = state[0], setData = state[1]
@@ -141,11 +141,10 @@ window.__ModuleLoader__.load({
         var requested = room
         return api('/fish-room/state?room=' + encodeURIComponent(requested), { cache: 'no-store' })
           .then(function (j) {
-            if (j && j.ok && requested === activeRoomRef.current) { setData(j); return j }
-            if (j && j.error && requested === activeRoomRef.current) setError(j.error)
+            if (requested === activeRoomRef.current) { setData(chatView(j)); setError(''); return j }
             return j
           }).catch(function (e) {
-            if (requested === activeRoomRef.current) setError('连接失败，请检查房间服务')
+            if (requested === activeRoomRef.current) setError(e && e.message || '连接失败，请检查房间服务')
             return null
           })
       }, [room])
@@ -284,16 +283,27 @@ window.__ModuleLoader__.load({
       var cfg = data.config || {}
       var rooms = data.rooms || []
       var myName = data.me && data.me.name || '我'
-      var isConnected = !!cfg.connected
+      var view = data.ui || {}
+      var connection = view.connection || { state: 'connecting', label: '连接中', detail: '正在连接房间' }
+      var presence = view.presence || { online: online.length, total: members.length }
+      var persona = view.persona || { label: cfg.personaLabel || '跟随智能体' }
+      var isConnected = connection.state === 'online'
 
       return h('div', { className: 'fr-root' },
         h('link', { rel: 'stylesheet', href: '/fish-room/ui.css' }),
         h('aside', { className: 'fr-sidebar' + (membersExpanded ? ' fr-members-open' : '') },
           h('div', { className: 'fr-brand' },
-            h('span', { className: 'fr-brand-mark', 'aria-hidden': true }, '≈'),
-            h('div', null, h('div', { className: 'fr-brand-title' }, '鱼房间'), h('div', { className: 'fr-brand-sub' }, 'AGENT COMMON ROOM'))
+            h('span', { className: 'fr-brand-mark', 'aria-hidden': true },
+              h('svg', { viewBox: '0 0 48 48', width: 34, height: 34, fill: 'none', stroke: 'currentColor', strokeWidth: 2.2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+                h('path', { d: 'M10 24c7-9 18-12 30-6-4 10-12 16-22 16-4 0-7-4-8-10Z' }),
+                h('path', { d: 'M10 24 4 17v15l6-8Z' }),
+                h('circle', { cx: 29.5, cy: 22, r: 1.8, fill: 'currentColor', stroke: 'none' }),
+                h('path', { d: 'M19 29c4 1 8 0 11-3' })
+              )
+            ),
+            h('div', null, h('div', { className: 'fr-brand-title' }, '鱼房间'), h('div', { className: 'fr-brand-sub' }, 'A PLACE TO CONNECT'))
           ),
-          h('div', { className: 'fr-side-label' }, '我的房间 ', h('span', null, rooms.length)),
+          h('div', { className: 'fr-side-label' }, '我的房间 ', h('span', { className: 'fr-side-count' }, String(rooms.length).padStart(2, '0'))),
           h('nav', { className: 'fr-rooms', 'aria-label': '切换房间' },
             rooms.map(function (r) {
               var count = r.name === room ? members.filter(function (m) { return m.online }).length : null
@@ -318,23 +328,23 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'fr-member-status' + (m.online ? ' is-on' : ''), title: m.online ? '在线' : '离线' }))
             }) : h('div', { className: 'fr-members-empty' }, '成员将在首次发言后出现')
           ),
-          h('div', { className: 'fr-side-foot' }, h('span', { className: 'fr-presence' + (isConnected ? ' is-on' : '') }), isConnected ? '消息中继已连接' : '等待中继连接')
+          h('div', { className: 'fr-side-foot' }, h('span', { className: 'fr-presence' + (isConnected ? ' is-on' : '') }), h('span', null, connection.detail), h('span', { className: 'fr-side-foot-label' }, 'FISH / LIVE'))
         ),
         h('section', { className: 'fr-conversation', 'aria-label': '房间聊天' },
           h('header', { className: 'fr-chat-head' },
             h('div', { className: 'fr-chat-heading' },
-              h('div', { className: 'fr-kicker' }, '正在交谈'),
+              h('div', { className: 'fr-kicker' }, 'FISH ROOM', h('span', { className: 'fr-kicker-divider', 'aria-hidden': true }, ' / '), '正在交谈'),
               h('div', { className: 'fr-heading-line' },
                 h('h1', null, room || '鱼房间'),
-                h('span', { className: 'fr-status' + (isConnected ? ' is-on' : '') }, isConnected ? '已连接' : '未连接')
+                h(ConnectionBadge, { connection: connection })
               ),
-              h('div', { className: 'fr-subtitle' }, online.length + ' 人在线 · ' + (members.length || 0) + ' 位成员 · 人设：' + (cfg.personaLabel || '跟随智能体'))
+              h('div', { className: 'fr-subtitle' }, presence.online + ' 人在线 · ' + presence.total + ' 位成员 · 人设：' + persona.label)
             ),
             h('div', { className: 'fr-head-actions' },
-              h('button', { type: 'button', className: 'fr-icon-button' + (searchOpen ? ' is-active' : ''), onClick: function () { if (searchOpen) closeSearch(); else setSearchOpen(true) }, title: '搜索聊天记录', 'aria-label': '搜索聊天记录' }, '⌕'),
-              h('button', { type: 'button', className: 'fr-icon-button fr-refresh', onClick: reload, title: '刷新消息', 'aria-label': '刷新消息' }, '↻'),
-              h('button', { type: 'button', className: 'fr-text-button', onClick: function () { window.open('/fish-room/export?room=' + encodeURIComponent(room) + '&fmt=md', '_blank', 'noopener') }, title: '导出当前房间聊天记录' }, '导出记录'),
-              h('button', { type: 'button', className: 'fr-text-button fr-settings-entry', onClick: function () { setSettingsOpen(true) }, title: '打开房间设置' }, '房间设置')
+              h('button', { type: 'button', className: 'fr-icon-button' + (searchOpen ? ' is-active' : ''), onClick: function () { if (searchOpen) closeSearch(); else setSearchOpen(true) }, title: '搜索聊天记录', 'aria-label': '搜索聊天记录' }, h(UiGlyph, { name: 'search' })),
+              h('button', { type: 'button', className: 'fr-icon-button fr-refresh', onClick: reload, title: '刷新消息', 'aria-label': '刷新消息' }, h(UiGlyph, { name: 'refresh' })),
+              h('button', { type: 'button', className: 'fr-text-button', onClick: function () { window.open('/fish-room/export?room=' + encodeURIComponent(room) + '&fmt=md', '_blank', 'noopener') }, title: '导出当前房间聊天记录' }, h(UiGlyph, { name: 'export' }), '导出记录'),
+              h('button', { type: 'button', className: 'fr-text-button fr-settings-entry', onClick: function () { setSettingsOpen(true) }, title: '打开房间设置' }, h(UiGlyph, { name: 'settings' }), '房间设置')
             )
           ),
           searchOpen ? h('form', { className: 'fr-search', onSubmit: function (e) { e.preventDefault(); doSearch() } },
@@ -350,7 +360,11 @@ window.__ModuleLoader__.load({
               if (atBottomRef.current && !document.hidden) setUnread(0)
             }
           },
-            !data.ok ? h('div', { className: 'fr-empty' }, h('strong', null, '正在连接房间'), h('p', null, '聊天记录将在连接成功后显示。')) :
+            !data.ok ? h('div', { className: 'fr-empty' },
+              h('strong', null, error ? '无法加载聊天室' : '正在读取房间消息'),
+              h('p', null, error || '连接完成后将显示房间消息。'),
+              error ? h('button', { type: 'button', className: 'fr-retry', onClick: reload }, '重新连接') : null
+            ) :
             !msgs.length ? h('div', { className: 'fr-empty' },
               h('span', { className: 'fr-empty-mark', 'aria-hidden': true }, '≈'),
               h('strong', null, results !== null ? '没有找到相关消息' : '从一句话开始'),
@@ -418,10 +432,9 @@ window.__ModuleLoader__.load({
       var source = useState(null), rooms = source[0], setRooms = source[1]
       var presetSource = useState([]), personaOptions = presetSource[0], setPersonaOptions = presetSource[1]
       var personaCategoryState = useState('standard'), personaCategory = personaCategoryState[0], setPersonaCategory = personaCategoryState[1]
-      var personaCategories = [
-        { id: 'standard', label: '常用' }, { id: 'tieba', label: '贴吧' },
-        { id: 'thunder', label: '雷霆' }, { id: 'custom', label: '自定义' },
-      ]
+      var settingsMetaState = useState({ personaGroups: [], maxRooms: 32, maxPersonaLength: 2000, sections: [] })
+      var settingsMeta = settingsMetaState[0], setSettingsMeta = settingsMetaState[1]
+      var personaCategories = settingsMeta.personaGroups
       var selectedState = useState(0), selected = selectedState[0], setSelected = selectedState[1]
       var statusState = useState(''), status = statusState[0], setStatus = statusState[1]
       var errorState = useState(false), isError = errorState[0], setIsError = errorState[1]
@@ -429,7 +442,17 @@ window.__ModuleLoader__.load({
       var dirtyState = useState(false), dirty = dirtyState[0], setDirty = dirtyState[1]
       var visibleState = useState(false), showPass = visibleState[0], setShowPass = visibleState[1]
       var focusRef = useRef(null)
+      var settingsRootRef = useRef(null)
+      var selectedRoomRef = useRef('')
       var nextId = useRef(1)
+      var jumpToSection = function (section) {
+        var root = settingsRootRef.current
+        var target = root && root.querySelector('[data-room-section="' + section + '"]')
+        if (target) {
+          if (target.tagName === 'DETAILS') target.open = true
+          target.scrollIntoView({ block: 'start', behavior: 'smooth' })
+        }
+      }
 
       var personaGroupOf = function (room, choices) {
         if (!room) return 'standard'
@@ -441,13 +464,16 @@ window.__ModuleLoader__.load({
       var readSettings = useCallback(function () {
         setStatus('')
         return api('/fish-room/settings', { cache: 'no-store' }).then(function (j) {
-          if (!j || !j.ok) throw new Error((j && j.error) || '无法读取房间设置')
-          if (!Array.isArray(j.personas) || !j.personas.length) throw new Error('预置人设列表读取失败')
+          settingsView(j)
+          var matched = j.rooms.findIndex(function (r) { return r.name === selectedRoomRef.current })
+          var index = matched < 0 ? 0 : matched
+          selectedRoomRef.current = j.rooms[index] && j.rooms[index].name || ''
+          setSettingsMeta(j.ui)
           setPersonaOptions(j.personas)
-          setPersonaCategory(personaGroupOf((j.rooms || [])[0], j.personas))
-          setSelected(0)
-          setRooms((j.rooms || []).map(function (r) { return Object.assign({}, r, { _originalName: r.name, _passphrase: '', _key: 'room-' + nextId.current++ }) }))
-          setDirty(false)
+          setPersonaCategory(personaGroupOf(j.rooms[index], j.personas))
+          setSelected(index)
+          setRooms(j.rooms.map(function (r) { return Object.assign({}, r, { _originalName: r.name, _passphrase: '', _key: 'room-' + nextId.current++ }) }))
+          setIsError(false); setDirty(false)
           return j
         }).catch(function (e) { setIsError(true); setStatus(e.message || '无法读取配置') })
       }, [])
@@ -483,12 +509,16 @@ window.__ModuleLoader__.load({
       }
 
       var addRoom = function () {
+        if (rooms && rooms.length >= settingsMeta.maxRooms) {
+          setIsError(true); setStatus('最多可创建 ' + settingsMeta.maxRooms + ' 个房间'); return
+        }
         setRooms(function (prev) {
           var used = new Set(prev.map(function (r) { return r.name }))
           var n = 1
           while (used.has('新房间-' + n)) n++
           setSelected(prev.length)
           setPersonaCategory('standard')
+          selectedRoomRef.current = '新房间-' + n
           return prev.concat([{ name: '新房间-' + n, _key: 'new-' + nextId.current++, _passphrase: '',
             _originalName: '', displayName: '', persona: '', personaPreset: 'follow', server: 'https://ntfy.sh', transport: 'ntfy',
             topic: '', allow: [], deny: [], owner: '', autoReply: true, maxRounds: 2, cooldownSec: 15,
@@ -501,8 +531,12 @@ window.__ModuleLoader__.load({
       var removeRoom = function () {
         if (!rooms || rooms.length < 2) { setIsError(true); setStatus('至少保留一个房间'); return }
         if (!window.confirm('删除这个房间的配置？保存后将退出该房间，历史记录仍保留在本地。')) return
-        setRooms(function (prev) { return prev.filter(function (_, i) { return i !== selected }) })
-        setSelected(function (value) { return Math.max(0, Math.min(value, rooms.length - 2)) })
+        var nextRooms = rooms.filter(function (_, i) { return i !== selected })
+        var nextIndex = Math.max(0, Math.min(selected, nextRooms.length - 1))
+        selectedRoomRef.current = nextRooms[nextIndex].name
+        setRooms(nextRooms)
+        setSelected(nextIndex)
+        setPersonaCategory(personaGroupOf(nextRooms[nextIndex], personaOptions))
         setDirty(true)
         setStatus('')
       }
@@ -522,7 +556,7 @@ window.__ModuleLoader__.load({
           if (r.turnTimeoutSec < 15 || r.turnTimeoutSec > 600 || !Number.isInteger(r.turnTimeoutSec)) return '回答等待时间应在 15～600 秒之间'
           var personaId = r.personaPreset || (String(r.persona || '').trim() ? 'custom' : 'follow')
           if (!personaOptions.some(function (p) { return p.id === personaId })) return '请选择有效的聊天人设'
-          if (String(r.persona || '').length > 2000) return '自定义聊天人设最多填写 2000 字'
+          if (String(r.persona || '').length > settingsMeta.maxPersonaLength) return '自定义聊天人设最多填写 ' + settingsMeta.maxPersonaLength + ' 字'
           if (personaId === 'custom' && !String(r.persona || '').trim()) return '请先填写自定义聊天人设'
         }
         return ''
@@ -547,9 +581,15 @@ window.__ModuleLoader__.load({
         })
         api('/fish-room/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rooms: payload }) })
           .then(function (j) {
-            if (!j || !j.ok) throw new Error((j && j.error) || '保存失败')
-            setPersonaOptions(Array.isArray(j.personas) ? j.personas : [])
-          setRooms((j.rooms || []).map(function (r) { return Object.assign({}, r, { _originalName: r.name, _passphrase: '', _key: 'room-' + nextId.current++ }) }))
+            settingsView(j)
+            var keepName = rooms[selected] && rooms[selected].name.trim()
+            var matched = j.rooms.findIndex(function (r) { return r.name === keepName })
+            var nextIndex = matched < 0 ? 0 : matched
+            selectedRoomRef.current = j.rooms[nextIndex] && j.rooms[nextIndex].name || ''
+            setSettingsMeta(j.ui)
+            setPersonaOptions(j.personas)
+            setRooms(j.rooms.map(function (r) { return Object.assign({}, r, { _originalName: r.name, _passphrase: '', _key: 'room-' + nextId.current++ }) }))
+            setSelected(nextIndex); setPersonaCategory(personaGroupOf(j.rooms[nextIndex], j.personas))
             setDirty(false); setIsError(false); setShowPass(false)
             setStatus('配置已保存并应用，连接状态会在页面中更新')
           }).catch(function (e) { setIsError(true); setStatus(e.message || '保存失败') })
@@ -562,7 +602,7 @@ window.__ModuleLoader__.load({
       }
       return h(React.Fragment, null,
         h('link', { rel: 'stylesheet', href: '/fish-room/ui.css' }),
-        h('div', { className: 'fr-settings' + (props.embedded ? ' fr-settings-embedded' : '') },
+        h('div', { ref: settingsRootRef, className: 'fr-settings' + (props.embedded ? ' fr-settings-embedded' : '') },
           h('div', { className: 'fr-settings-heading' },
             h('div', null, h('div', { className: 'fr-kicker' }, 'FISH ROOM · SETTINGS'),
               h('h2', null, '鱼房间设置'),
@@ -577,16 +617,24 @@ window.__ModuleLoader__.load({
               h('div', { className: 'fr-settings-toolbar' },
                 h('div', { className: 'fr-settings-tabs', role: 'tablist', 'aria-label': '选择房间' },
                   rooms.map(function (r, i) {
-                    return h('button', { key: r._key, type: 'button', role: 'tab', 'aria-selected': i === selected, className: 'fr-settings-tab' + (i === selected ? ' is-selected' : ''), onClick: function () { setSelected(i); setPersonaCategory(personaGroupOf(r, personaOptions)); setShowPass(false); setStatus('') } },
+                    return h('button', { key: r._key, type: 'button', role: 'tab', 'aria-selected': i === selected, className: 'fr-settings-tab' + (i === selected ? ' is-selected' : ''), onClick: function () { selectedRoomRef.current = r.name; setSelected(i); setPersonaCategory(personaGroupOf(r, personaOptions)); setShowPass(false); setStatus('') } },
                       h('span', { className: 'fr-room-connection' + (r.connected ? ' is-on' : '') }),
                       r.name || '未命名房间')
                   })
                 ),
-                h('button', { type: 'button', className: 'fr-settings-add', onClick: addRoom }, '＋ 新建房间')
+                h('button', { type: 'button', className: 'fr-settings-add', onClick: addRoom,
+                  disabled: rooms.length >= settingsMeta.maxRooms }, '＋ 新建房间')
+              ),
+              h('nav', { className: 'fr-settings-jump', 'aria-label': '跳转到设置章节' },
+                (settingsMeta.sections || []).map(function (section, position) {
+                  return h('button', { key: section, type: 'button', className: 'fr-settings-jump-button',
+                    onClick: function () { jumpToSection(position + 1) } },
+                    h('span', { 'aria-hidden': true }, String(position + 1).padStart(2, '0')), section)
+                })
               ),
               rooms[selected] ? (function (r, i) {
                 return h('div', { key: r._key, className: 'fr-settings-form', role: 'tabpanel' },
-                  h('section', { className: 'fr-settings-card' },
+                  h('section', { className: 'fr-settings-card', 'data-room-section': '1' },
                     h('div', { className: 'fr-settings-section-head' }, h('span', { className: 'fr-section-num' }, '01'),
                       h('div', null, h('h3', null, '房间信息'), h('p', null, '用于识别房间和聊天中的身份。'))),
                     h('div', { className: 'fr-settings-grid' },
@@ -602,7 +650,7 @@ window.__ModuleLoader__.load({
                         h('span', { className: 'fr-field-help' }, '口令用于消息加密，请通过可信渠道与其他成员一致设置。'))
                     )
                   ),
-                  h('section', { className: 'fr-settings-card' },
+                  h('section', { className: 'fr-settings-card', 'data-room-section': '2' },
                     h('div', { className: 'fr-settings-section-head' }, h('span', { className: 'fr-section-num' }, '02'),
                       h('div', null, h('h3', null, '连接设置'), h('p', null, '配置消息传输位置。连接变更后，插件自动重新订阅。'))),
                     h('div', { className: 'fr-settings-grid' },
@@ -614,7 +662,7 @@ window.__ModuleLoader__.load({
                       textField(r, i, 'topic', '中继主题（可选）', '留空时按照房间名称自动生成。', { full: true, placeholder: '自动：dsh-room-房间名' })
                     )
                   ),
-                  h('section', { className: 'fr-settings-card' },
+                  h('section', { className: 'fr-settings-card', 'data-room-section': '3' },
                     h('div', { className: 'fr-settings-section-head' }, h('span', { className: 'fr-section-num' }, '03'),
                       h('div', null, h('h3', null, '聊天与自动接话'), h('p', null, '控制 Agent 是否自动参与房间对话和回复频率。'))),
                     h('label', { className: 'fr-settings-switch' },
@@ -643,26 +691,27 @@ window.__ModuleLoader__.load({
                       h('fieldset', { className: 'fr-persona-choices', 'aria-labelledby': 'fish-persona-title' },
                         personaOptions.filter(function (p) { return p.group === personaCategory }).map(function (p) {
                           var active = (r.personaPreset || (r.persona ? 'custom' : 'follow')) === p.id
-                          return h('label', { key: p.id, className: 'fr-persona-choice' + (active ? ' is-selected' : '') },
-                            h('span', { className: 'fr-persona-choice-top' },
-                              h('input', { type: 'radio', name: 'fish-persona-' + r._key, value: p.id,
-                                checked: active, onChange: function () { update(i, 'personaPreset', p.id) } }),
-                              h('strong', null, p.label)),
-                            h('span', { className: 'fr-persona-desc' }, p.description),
-                            h('span', { className: 'fr-persona-example' }, '语气示例：' + p.example)
-                          )
+                          return h(PersonaChoice, { key: p.id, choice: p, selected: active,
+                            radioName: 'fish-persona-' + r._key,
+                            onSelect: function () { update(i, 'personaPreset', p.id) } })
                         })
+                      ),
+                      h('div', { className: 'fr-persona-preview', role: 'status' },
+                        h('div', { className: 'fr-persona-preview-label' }, '当前人设 · 语气预览'),
+                        h('p', null, (personaOptions.find(function (p) {
+                          return p.id === (r.personaPreset || (r.persona ? 'custom' : 'follow'))
+                        }) || {}).example || '使用你的个性化人设接话')
                       ),
                       (r.personaPreset || (r.persona ? 'custom' : 'follow')) === 'custom'
                         ? h('div', { className: 'fr-persona-custom' },
                           h('label', { htmlFor: 'fish-setting-' + i + '-persona' }, '自己编写人设'),
                           h('textarea', { id: 'fish-setting-' + i + '-persona', rows: 5,
-                            maxLength: 2000, value: r.persona || '',
+                            maxLength: settingsMeta.maxPersonaLength, value: r.persona || '',
                             placeholder: '例如：你是一位沉稳、有幽默感的聊天伙伴。说话自然，擅长倾听，偶尔提出有趣的问题。回复保持简洁，不要反复自我介绍。',
                             onChange: function (e) { update(i, 'persona', e.target.value) } }),
                           h('div', { className: 'fr-persona-custom-foot' },
                             h('span', null, '保存后用于下一轮接话；切回自定义时仍可继续编辑先前填写的内容。'),
-                            h('span', { className: 'fr-persona-count' }, String((r.persona || '').length) + ' / 2000')
+                            h('span', { className: 'fr-persona-count' }, String((r.persona || '').length) + ' / ' + settingsMeta.maxPersonaLength)
                           )
                         ) : null
                     ),
@@ -671,7 +720,7 @@ window.__ModuleLoader__.load({
                       textField(r, i, 'cooldownSec', '接话冷却（秒）', '范围 0～300，避免短时间连续接话。', { type: 'number', min: 0, max: 300 })
                     )
                   ),
-                  h('details', { className: 'fr-settings-card fr-settings-disclosure' },
+                  h('details', { className: 'fr-settings-card fr-settings-disclosure', 'data-room-section': '4' },
                     h('summary', null, h('span', { className: 'fr-section-num' }, '04'), h('span', null, h('strong', null, '成员与权限'), h('small', null, '管理成员访问与消息过滤'))),
                     h('div', { className: 'fr-settings-grid' },
                       textField(r, i, 'owner', '房间主人（可选）', '显示名称须与实际发言者一致。'),
@@ -679,7 +728,7 @@ window.__ModuleLoader__.load({
                       textField(r, i, 'deny', '不接话成员', '每行一个名字。', { multiline: true, list: true })
                     )
                   ),
-                  h('details', { className: 'fr-settings-card fr-settings-disclosure' },
+                  h('details', { className: 'fr-settings-card fr-settings-disclosure', 'data-room-section': '5' },
                     h('summary', null, h('span', { className: 'fr-section-num' }, '05'), h('span', null, h('strong', null, '高级设置'), h('small', null, '模型和运行环境，通常沿用 DSH 默认配置即可'))),
                     h('div', { className: 'fr-settings-grid' },
                       textField(r, i, 'provider', '模型提供方', '可留空，沿用 DSH 默认。'),

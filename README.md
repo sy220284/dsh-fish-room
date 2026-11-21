@@ -168,7 +168,23 @@ curl -X POST http://127.0.0.1:3080/fish-room/send \
 | `~/.dsh/plugins-data/fish-room/cursor.json` | 中继游标：防止重连/重启后重放旧消息 |
 | `~/.dsh/plugins-data/fish-room/room.log` | 插件日志（订阅 / 收消息 / 回话 / 报错） |
 
-## 八、界面验证与运行边界
+## 八、界面与接口契约
+
+DSH 聊天入口和设置分区共享同一个内嵌 React 插件。浏览器只调用 `/fish-room/` 下的本地接口；聊天展示与配置编辑使用独立的数据契约，避免把服务器、模型路径等运行信息塞进聊天组件。
+
+| 接口 | 页面使用的内容 | 交互 |
+|---|---|---|
+| `GET /fish-room/state?room=...` | `schemaVersion: 2`、房间摘要、成员、消息，以及 `ui.connection`、`ui.presence`、`ui.persona` | 连接标识、人数、人设摘要、消息与空/错误状态 |
+| `GET /fish-room/settings` | `schemaVersion: 2`、完整可编辑房间配置，以及 `ui.personaGroups`、`ui.sections`、`ui.maxRooms`、`ui.maxPersonaLength` | 动态分类、章节跳转、房间切换、新增限制和输入长度 |
+| `POST /fish-room/settings` | 成功后返回同版本设置契约 | 保存并应用运行配置，保持选中的房间与人设分类；失败保持修改内容 |
+| `GET /fish-room/history` | 当前房间内匹配消息和总数 | 搜索、无结果、关闭后恢复实时消息 |
+| `POST /fish-room/send` | `ok` 或明确错误原因 | 发送中禁重复提交；失败保留草稿及附件，提示重试 |
+
+界面交互遵循四种统一反馈：**载入中、正常显示、无数据、可恢复错误**。设置页使用章节快捷导航；各人设选项显示名称和描述，选中的样式集中展示语气预览。桌面保持双栏，手机保持单列并使用可横向滚动的房间切换栏。全文均使用本地提供的样式，无远程 UI 依赖。
+
+**契约调整：** V2 聊天状态接口不再向聊天页发送中继主题、服务地址、模型与运行目录，这些字段仍可以通过设置接口编辑。第三方客户端如果读取了旧版聊天 `config` 的后台字段，应改为从设置接口读取。
+
+## 九、界面验证与运行边界
 
 - 主要入口是 `client.js` 注入 DSH 的 `main` 聊天面板与 `settings.section` 插件设置分区。`index.js` 提供实际通信接口、设置热生效与独立页兼容入口，视觉共用 `/fish-room/ui.css`。
 - `node --check index.js && node --check client.js && node --test tests/chat-ui.test.mjs tests/room-settings.test.mjs tests/persona.test.mjs` 验证代码语法、聊天核心路径、房间配置保存与运行态重连；CI 还在三种屏宽运行 Chromium，检查内置聊天、设置弹层和 DSH 设置分区，并保留截图。

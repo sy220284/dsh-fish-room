@@ -35,6 +35,29 @@ test('独立页、内嵌页具备共同结构与移动断点', () => {
   assert.equal(page.includes('innerHTML'), false, '消息使用安全 DOM 节点渲染')
 })
 
+test('夜潮工作区视觉基线及无障碍基础不应退化', () => {
+  assert.ok(css.includes('鱼房间 · 夜潮工作区'), '应保留统一的产品设计体系')
+  assert.match(css, /--fr-bg:#0d191f/, '背景应使用带蓝调的深色中性层')
+  assert.match(css, /--fr-accent:#8cdec8/, '操作重点色保持一致')
+  assert.ok(css.includes('@media(max-width:800px)'), '必须保持手机单列布局')
+  assert.ok(css.includes('prefers-reduced-motion:reduce'), '减少动态效果的系统偏好必须生效')
+  assert.ok(css.includes('.fr-root button:focus-visible'), '键盘焦点必须清晰可见')
+  assert.ok(clientSource.includes("function UiGlyph(props)"), '操作按钮必须使用统一矢量图标')
+  assert.ok(clientSource.includes("className: 'fr-brand-mark'"), '鱼形品牌标记需要保留')
+  assert.ok(clientSource.includes("className: 'fr-persona-choices'"), '人设选择器必须保留')
+  assert.ok(clientSource.includes("className: 'fr-settings-savebar'"), '设置保存操作不能丢失')
+})
+
+test('聊天室接口版本和视图契约应统一', () => {
+  assert.ok(clientSource.includes('schemaVersion !== 2'), '客户端对响应版本进行校验')
+  assert.ok(clientSource.includes('function chatView(response)'), '聊天视图具有统一的转换检查')
+  assert.ok(clientSource.includes('function settingsView(response)'), '设置响应具有统一的转换检查')
+  assert.ok(clientSource.includes('className: \'fr-settings-jump\''), '设置章节快捷导航存在')
+  assert.ok(clientSource.includes('className: \'fr-persona-preview\''), '选择预置时必须展示语气预览')
+  assert.ok(css.includes('.fr-settings-jump'), '导航有明确视觉样式')
+  assert.ok(css.includes('.fr-persona-preview'), '人设预览使用独立层级')
+})
+
 function harness() {
   const elements = new Map()
   class Element {
@@ -98,9 +121,13 @@ function harness() {
     const json = async () => {
       if(path.startsWith('/fish-room/state')) {
         const current = new URL('http://test'+path).searchParams.get('room') || 'fish-lake'
-        return {ok:true,room:current,rooms:configs,me:{id:'self',name:'我'},
+        return {ok:true,schemaVersion:2,room:current,
+          rooms:configs.map(r=>({name:r.name,connected:r.connected})),me:{id:'self',name:'我'},
           members:[{name:'对方',online:true}],messages:[...messages],
-          config:{connected:current==='fish-lake',typing:false}}
+          config:{connected:current==='fish-lake',typing:false,draft:'',personaLabel:'跟随智能体'},
+          ui:{connection:{state:current==='fish-lake'?'online':'offline',
+              label:current==='fish-lake'?'已连接':'连接中断',detail:'房间通讯正常'},
+            presence:{online:1,total:1},persona:{id:'follow',label:'跟随智能体'}}}
       }
       if(path.startsWith('/fish-room/history')) return {ok:true,total:1,messages:[messages[1]]}
       if(path==='/fish-room/media') return {ok:true,media:{type:'text/plain',name:'hello.txt',url:'https://example.test/hello.txt'}}
