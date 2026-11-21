@@ -28,6 +28,11 @@ jobs:
           node --check client.js
       - name: 验证聊天页面交互
         run: node --test tests/chat-ui.test.mjs tests/room-settings.test.mjs tests/persona.test.mjs
+      - name: 安装中文字体用于真实界面截图验收
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends fonts-noto-cjk
+          fc-match "PingFang SC" | head -1
       - uses: browser-actions/setup-chrome@v2
         id: chrome
       - name: 安装浏览器测试依赖
