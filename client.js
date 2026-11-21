@@ -213,7 +213,7 @@ window.__ModuleLoader__.load({
             if (requested === activeRoomRef.current) { setData(chatView(j)); setError(''); return j }
             return j
           }).catch(function (e) {
-            if (requested === activeRoomRef.current) setError('连接失败，请检查房间服务')
+            if (requested === activeRoomRef.current) setError(e && e.message || '连接失败，请检查房间服务')
             return null
           })
       }, [room])
