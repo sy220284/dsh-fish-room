@@ -547,6 +547,18 @@ export function apply(ctx, config) {
         return undefined
     }
 
+    /** 同 id 的活 agent 会占着会话（热重载留下的），先收掉 */
+    async function killLive(id) {
+        try {
+            const live = ctx.agents.get?.(id)
+            if (live && typeof live.dispose === 'function') {
+                await live.dispose()
+                return true
+            }
+        } catch { /* ignore */ }
+        return false
+    }
+
     async function ensureRoomAgent(st) {
         if (st.handle) return st.handle
         if (st.promise) return st.promise
@@ -554,21 +566,28 @@ export function apply(ctx, config) {
         st.promise = (async () => {
             const route = resolveRoute(st)
             const opts = { meta: { cwd: st.cfg.cwd || HOME }, ...(route ? { agentOptions: route } : {}) }
+            await killLive(sid)
+            // 先尝试恢复（保住上次的对话历史）
+            try {
+                st.handle = await ctx.agents.resume({ resumeSessionId: sid, ...opts })
+                log(`房间会话已恢复（接着上次聊）：${sid}`)
+                return st.handle
+            } catch (e) {
+                log('恢复房间会话失败，改为新建：', e?.message || e)
+            }
             try {
                 st.handle = await ctx.agents.create({ sessionId: sid, ...opts })
                 log(`房间会话已开：${sid}`)
                 return st.handle
             } catch (e) {
+                await killLive(sid)
                 try {
-                    const live = ctx.agents.get?.(sid)
-                    if (live && typeof live.dispose === 'function') await live.dispose()
-                } catch { /* ignore */ }
-                try {
-                    st.handle = await ctx.agents.resume({ resumeSessionId: sid, ...opts })
-                    log(`房间会话已恢复（接着上次聊）：${sid}`)
+                    st.handle = await ctx.agents.create({ sessionId: sid, ...opts })
+                    log(`房间会话已开（清掉旧占用后）：${sid}`)
                     return st.handle
                 } catch (e2) {
                     const alt = `${sid}-${st.instanceId.slice(0, 8)}`
+                    await killLive(alt)
                     try {
                         st.handle = await ctx.agents.create({ sessionId: alt, ...opts })
                         log(`房间会话另起新档：${alt}`)
