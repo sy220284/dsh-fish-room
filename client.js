@@ -92,8 +92,36 @@ window.__ModuleLoader__.load({
       return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
     }
 
+    // 接口边界统一检查 HTTP 状态、响应结构和版本，页面只消费可靠数据。
     function api(path, opts) {
-      return fetch(path, opts).then(function (r) { return r.json().catch(function () { return {} }) })
+      return fetch(path, opts).then(function (response) {
+        return response.json().catch(function () { throw new Error('服务响应格式错误，请刷新后重试') })
+          .then(function (body) {
+            if (!response.ok || !body || body.ok !== true) {
+              throw new Error(body && body.error || '请求失败，请重试')
+            }
+            return body
+          })
+      })
+    }
+
+    function chatView(response) {
+      if (response.schemaVersion !== 2 ||
+          !Array.isArray(response.rooms) || !Array.isArray(response.members) ||
+          !Array.isArray(response.messages) || !response.config ||
+          !response.ui || !response.ui.connection || !response.ui.presence || !response.ui.persona) {
+        throw new Error('聊天数据版本不匹配，请刷新 DSH 后重试')
+      }
+      return response
+    }
+
+    function settingsView(response) {
+      if (response.schemaVersion !== 2 || !Array.isArray(response.rooms) ||
+          !Array.isArray(response.personas) || !response.personas.length ||
+          !response.ui || !Array.isArray(response.ui.personaGroups)) {
+        throw new Error('设置数据版本不匹配，请刷新 DSH 后重试')
+      }
+      return response
     }
 
     function mediaNodes(m) {
@@ -164,8 +192,7 @@ window.__ModuleLoader__.load({
         var requested = room
         return api('/fish-room/state?room=' + encodeURIComponent(requested), { cache: 'no-store' })
           .then(function (j) {
-            if (j && j.ok && requested === activeRoomRef.current) { setData(j); return j }
-            if (j && j.error && requested === activeRoomRef.current) setError(j.error)
+            if (requested === activeRoomRef.current) { setData(chatView(j)); setError(''); return j }
             return j
           }).catch(function (e) {
             if (requested === activeRoomRef.current) setError('连接失败，请检查房间服务')
@@ -307,7 +334,11 @@ window.__ModuleLoader__.load({
       var cfg = data.config || {}
       var rooms = data.rooms || []
       var myName = data.me && data.me.name || '我'
-      var isConnected = !!cfg.connected
+      var view = data.ui || {}
+      var connection = view.connection || { state: 'connecting', label: '连接中', detail: '正在连接房间' }
+      var presence = view.presence || { online: online.length, total: members.length }
+      var persona = view.persona || { label: cfg.personaLabel || '跟随智能体' }
+      var isConnected = connection.state === 'online'
 
       return h('div', { className: 'fr-root' },
         h('link', { rel: 'stylesheet', href: '/fish-room/ui.css' }),
@@ -348,7 +379,7 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'fr-member-status' + (m.online ? ' is-on' : ''), title: m.online ? '在线' : '离线' }))
             }) : h('div', { className: 'fr-members-empty' }, '成员将在首次发言后出现')
           ),
-          h('div', { className: 'fr-side-foot' }, h('span', { className: 'fr-presence' + (isConnected ? ' is-on' : '') }), h('span', null, isConnected ? '房间通讯正常' : '正在连接房间'), h('span', { className: 'fr-side-foot-label' }, 'FISH / LIVE'))
+          h('div', { className: 'fr-side-foot' }, h('span', { className: 'fr-presence' + (isConnected ? ' is-on' : '') }), h('span', null, connection.detail), h('span', { className: 'fr-side-foot-label' }, 'FISH / LIVE'))
         ),
         h('section', { className: 'fr-conversation', 'aria-label': '房间聊天' },
           h('header', { className: 'fr-chat-head' },
@@ -356,9 +387,9 @@ window.__ModuleLoader__.load({
               h('div', { className: 'fr-kicker' }, 'FISH ROOM', h('span', { className: 'fr-kicker-divider', 'aria-hidden': true }, ' / '), '正在交谈'),
               h('div', { className: 'fr-heading-line' },
                 h('h1', null, room || '鱼房间'),
-                h('span', { className: 'fr-status' + (isConnected ? ' is-on' : '') }, isConnected ? '已连接' : '未连接')
+                h('span', { className: 'fr-status' + (isConnected ? ' is-on' : '') }, connection.label)
               ),
-              h('div', { className: 'fr-subtitle' }, online.length + ' 人在线 · ' + (members.length || 0) + ' 位成员 · 人设：' + (cfg.personaLabel || '跟随智能体'))
+              h('div', { className: 'fr-subtitle' }, presence.online + ' 人在线 · ' + presence.total + ' 位成员 · 人设：' + persona.label)
             ),
             h('div', { className: 'fr-head-actions' },
               h('button', { type: 'button', className: 'fr-icon-button' + (searchOpen ? ' is-active' : ''), onClick: function () { if (searchOpen) closeSearch(); else setSearchOpen(true) }, title: '搜索聊天记录', 'aria-label': '搜索聊天记录' }, h(UiGlyph, { name: 'search' })),
@@ -380,7 +411,11 @@ window.__ModuleLoader__.load({
               if (atBottomRef.current && !document.hidden) setUnread(0)
             }
           },
-            !data.ok ? h('div', { className: 'fr-empty' }, h('strong', null, '正在连接房间'), h('p', null, '聊天记录将在连接成功后显示。')) :
+            !data.ok ? h('div', { className: 'fr-empty' },
+              h('strong', null, error ? '无法加载聊天室' : '正在读取房间消息'),
+              h('p', null, error || '连接完成后将显示房间消息。'),
+              error ? h('button', { type: 'button', className: 'fr-retry', onClick: reload }, '重新连接') : null
+            ) :
             !msgs.length ? h('div', { className: 'fr-empty' },
               h('span', { className: 'fr-empty-mark', 'aria-hidden': true }, '≈'),
               h('strong', null, results !== null ? '没有找到相关消息' : '从一句话开始'),
