@@ -155,14 +155,14 @@ test('预置与自定义人设保存后进入真实 Agent 接话指令，并兼�
     ['tieba_bro','贴吧老哥'],
     ['tieba_hot','贴吧神评'],
     ['tieba_fun','贴吧乐子人'],
-    ['thunder_absurd','雷霆抽象'],
-    ['thunder_roast','雷霆锐评'],
-    ['thunder_sarcasm','雷霆阴阳'],
-    ['thunder_rant','雷霆暴躁'],
-    ['thunder_tough','雷霆嘴硬'],
-    ['thunder_drama','雷霆戏精'],
-    ['thunder_riddle','雷霆谜语人'],
-    ['thunder_meme','雷霆梗王'],
+    ['thunder_absurd','抽象'],
+    ['thunder_roast','锐评'],
+    ['thunder_sarcasm','阴阳'],
+    ['thunder_rant','暴躁'],
+    ['thunder_tough','嘴硬'],
+    ['thunder_drama','戏精'],
+    ['thunder_riddle','谜语人'],
+    ['thunder_meme','梗王'],
   ]
   for (let i=0;i<otherStyles.length;i++){
     const [id,label]=otherStyles[i]
