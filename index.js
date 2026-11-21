@@ -373,6 +373,8 @@ export function apply(ctx, config) {
         const who = msg.fromName || '对方'
         const recent = messages.slice(-9, -1).map(m => `${m.fromName}：${m.text}`).join('\n')
         handle.agent.followup({
+            // 消息必须带 id：会话持久化校验要求「identified message」，否则这条会话以后没法 resume
+            id: `room-msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
             content: [{
                 type: 'text',
                 text: [
