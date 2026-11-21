@@ -478,11 +478,11 @@ function render(){const l=$('list');if(!st.messages.length){l.innerHTML='<div cl
   return '<div class="'+cls+'"><div class="who">'+esc(m.fromName||'?')+(m.kind==='agent'?' · agent':'')+'</div>'+esc(m.text)+'<div class="time">'+time(m.ts)+'</div></div>'
  }).join('');l.scrollTop=l.scrollHeight}
 function add(m){st.messages.push(m);render()}
-async function load(){const r=await fetch('fish-room/state',{cache:'no-store'});const j=await r.json();if(!j.ok)return
+async function load(){const r=await fetch('/fish-room/state',{cache:'no-store'});const j=await r.json();if(!j.ok)return
  st=j;$('room').textContent=j.room||'鱼房间';$('members').textContent=(j.members||[]).length+' 人在房间里'
  $('dot').classList.toggle('on',!!j.connected);render()}
 async function send(){const i=$('input');const t=i.value.trim();if(!t)return;i.value=''
- const r=await fetch('fish-room/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})})
+ const r=await fetch('/fish-room/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})})
  const j=await r.json();if(!j.ok)alert(j.error||'发送失败')}
 function quick(t){$('input').value=t;$('input').focus()}
 function openPanel(){load().then(()=>{const c=st.config||{};$('c_room').value=c.room||'';$('c_name').value=c.displayName||''
@@ -494,10 +494,10 @@ async function saveCfg(){const patch={room:$('c_room').value.trim(),displayName:
  persona:$('c_persona').value,server:$('c_server').value.trim(),autoReply:$('c_auto').checked,
  maxRounds:Number($('c_rounds').value||2),cooldownSec:Number($('c_cd').value||15)}
  const pass=$('c_pass').value;if(pass)patch.passphrase=pass
- const r=await fetch('fish-room/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)})
+ const r=await fetch('/fish-room/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)})
  const j=await r.json();$('cfgmsg').textContent=j.ok?'保存好了':'保存失败：'+(j.error||'');if(j.ok)setTimeout(closePanel,600)}
 $('input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}})
-const es=new EventSource('fish-room/events')
+const es=new EventSource('/fish-room/events')
 es.onmessage=e=>{try{const p=JSON.parse(e.data)
  if(p.type==='message'){if(p.message.from!==st.me.id)add(p.message);else load()}
  if(p.type==='status'){$('dot').classList.toggle('on',!!p.connected);load()}
