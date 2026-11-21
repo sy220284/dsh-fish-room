@@ -99,17 +99,18 @@ window.__ModuleLoader__.load({
     function mediaNodes(m) {
       var list = m.media || []
       return list.map(function (x, i) {
-        var src = x.local || x.url
+        var src = x.url || (x.data ? 'data:' + (x.type || 'application/octet-stream') + ';base64,' + x.data : '')
+        if (!src) return null
         if ((x.type || '').indexOf('image/') === 0) {
           return h('img', { key: i, src: src, style: s.img, alt: x.name || 'image' })
         }
         if ((x.type || '').indexOf('audio/') === 0) {
           return h('div', { key: i, style: s.media },
             h('audio', { controls: true, src: src }),
-            h('a', { href: src, target: '_blank', style: { marginLeft: 8, color: C.accent } }, x.name || '语音'))
+            h('a', { href: src, target: '_blank', rel: 'noopener noreferrer', style: { marginLeft: 8, color: C.accent } }, x.name || '语音'))
         }
         return h('div', { key: i, style: s.media },
-          h('a', { href: src, target: '_blank', style: { color: C.accent } }, '📎 ' + (x.name || '文件')))
+          h('a', { href: src, target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent } }, '📎 ' + (x.name || '文件')))
       })
     }
 
@@ -204,6 +205,9 @@ window.__ModuleLoader__.load({
         setError(''); setUnread(0)
         atBottomRef.current = true
         setMembersExpanded(false)
+        setSelectedFile(null)
+        if (fileRef.current) fileRef.current.value = ''
+        setSearching(false)
       }
 
       var send = function () {
@@ -233,11 +237,14 @@ window.__ModuleLoader__.load({
           })
         }).then(function (response) {
           if (!response || !response.ok) throw new Error((response && response.error) || '发送失败')
-          setDraft(''); draftsRef.current[room] = ''
-          setSelectedFile(null)
-          if (fileRef.current) fileRef.current.value = ''
-          setSearchOpen(false); setQuery(''); setResults(null)
-          atBottomRef.current = true
+          draftsRef.current[room] = ''
+          if (activeRoomRef.current === room) {
+            setDraft('')
+            setSelectedFile(null)
+            if (fileRef.current) fileRef.current.value = ''
+            setSearchOpen(false); setQuery(''); setResults(null)
+            atBottomRef.current = true
+          }
           return reload()
         }).catch(function (e) {
           setError(e && e.message ? e.message : '发送失败，请重试')
