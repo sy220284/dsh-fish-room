@@ -224,6 +224,8 @@ try {
   await mountDsh(settingsPage,'settings.section')
   await settingsPage.getByRole('heading',{name:'鱼房间设置'}).waitFor()
   assert.equal(await settingsPage.locator('.fr-settings-card').count(),5,'DSH 原设置分区应展示完整的设置结构')
+  assert.equal(await settingsPage.locator('.fr-persona-choice').count(),1,'设置分区应自动定位已保存的自定义人设')
+  await settingsPage.getByRole('tab',{name:/常用/}).click()
   assert.equal(await settingsPage.locator('.fr-persona-choice').count(),7,'DSH 设置分区常用人设应有 7 款')
   await settingsPage.getByRole('tab',{name:/贴吧/}).click()
   assert.equal(await settingsPage.locator('.fr-persona-choice').count(),3,'DSH 设置分区应包含贴吧风格')
