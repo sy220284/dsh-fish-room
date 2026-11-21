@@ -250,6 +250,7 @@ export function apply(ctx, config) {
             handle: null,
             promise: null,
             turnBusy: false,
+            pending: null, // 上一轮进行中时排队的最后一条消息
             spoke: false,
             reader: null,
             gen: 0,
@@ -547,8 +548,22 @@ export function apply(ctx, config) {
             log(`访客消息，不接话：${sender}`)
             return
         }
+        if (st.turnBusy) {
+            // 上一轮还在跑：排到队尾，别把这条丢了
+            st.pending = m
+            log('上一轮还没结束，这条排到队尾')
+            return
+        }
+        await maybeReply(st, m)
+    }
+
+    /** 判断能不能接话，然后接。busy 时的消息由 pending 队列补上。 */
+    async function maybeReply(st, m) {
         if (!st.cfg.autoReply) return
-        if (Date.now() - st.lastReplyAt < st.cfg.cooldownSec * 1000) return
+        if (Date.now() - st.lastReplyAt < st.cfg.cooldownSec * 1000) {
+            log('冷却中，这条先不接话')
+            return
+        }
         if (Number(m.round || 0) >= st.cfg.maxRounds) return
         try {
             const reply = await runLocalAgent(st, m)
@@ -665,6 +680,12 @@ export function apply(ctx, config) {
             st.turnBusy = false
             st.typing = false
             broadcast(st, { type: 'typing', on: false })
+            // 补接上一轮期间排队的消息
+            const pending = st.pending
+            st.pending = null
+            if (pending && !stopped) {
+                setTimeout(() => { void maybeReply(st, pending) }, 200)
+            }
         }
     }
 
