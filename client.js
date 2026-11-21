@@ -417,6 +417,11 @@ window.__ModuleLoader__.load({
       props = props || {}
       var source = useState(null), rooms = source[0], setRooms = source[1]
       var presetSource = useState([]), personaOptions = presetSource[0], setPersonaOptions = presetSource[1]
+      var personaCategoryState = useState('standard'), personaCategory = personaCategoryState[0], setPersonaCategory = personaCategoryState[1]
+      var personaCategories = [
+        { id: 'standard', label: '常用' }, { id: 'tieba', label: '贴吧' },
+        { id: 'thunder', label: '雷霆' }, { id: 'custom', label: '自定义' },
+      ]
       var selectedState = useState(0), selected = selectedState[0], setSelected = selectedState[1]
       var statusState = useState(''), status = statusState[0], setStatus = statusState[1]
       var errorState = useState(false), isError = errorState[0], setIsError = errorState[1]
@@ -426,12 +431,21 @@ window.__ModuleLoader__.load({
       var focusRef = useRef(null)
       var nextId = useRef(1)
 
+      var personaGroupOf = function (room, choices) {
+        if (!room) return 'standard'
+        var id = room.personaPreset || (room.persona ? 'custom' : 'follow')
+        var item = (choices || []).find(function (p) { return p.id === id })
+        return item && item.group || 'standard'
+      }
+
       var readSettings = useCallback(function () {
         setStatus('')
         return api('/fish-room/settings', { cache: 'no-store' }).then(function (j) {
           if (!j || !j.ok) throw new Error((j && j.error) || '无法读取房间设置')
           if (!Array.isArray(j.personas) || !j.personas.length) throw new Error('预置人设列表读取失败')
-          setPersonaOptions(Array.isArray(j.personas) ? j.personas : [])
+          setPersonaOptions(j.personas)
+          setPersonaCategory(personaGroupOf((j.rooms || [])[0], j.personas))
+          setSelected(0)
           setRooms((j.rooms || []).map(function (r) { return Object.assign({}, r, { _originalName: r.name, _passphrase: '', _key: 'room-' + nextId.current++ }) }))
           setDirty(false)
           return j
@@ -474,6 +488,7 @@ window.__ModuleLoader__.load({
           var n = 1
           while (used.has('新房间-' + n)) n++
           setSelected(prev.length)
+          setPersonaCategory('standard')
           return prev.concat([{ name: '新房间-' + n, _key: 'new-' + nextId.current++, _passphrase: '',
             _originalName: '', displayName: '', persona: '', personaPreset: 'follow', server: 'https://ntfy.sh', transport: 'ntfy',
             topic: '', allow: [], deny: [], owner: '', autoReply: true, maxRounds: 2, cooldownSec: 15,
@@ -562,7 +577,7 @@ window.__ModuleLoader__.load({
               h('div', { className: 'fr-settings-toolbar' },
                 h('div', { className: 'fr-settings-tabs', role: 'tablist', 'aria-label': '选择房间' },
                   rooms.map(function (r, i) {
-                    return h('button', { key: r._key, type: 'button', role: 'tab', 'aria-selected': i === selected, className: 'fr-settings-tab' + (i === selected ? ' is-selected' : ''), onClick: function () { setSelected(i); setShowPass(false); setStatus('') } },
+                    return h('button', { key: r._key, type: 'button', role: 'tab', 'aria-selected': i === selected, className: 'fr-settings-tab' + (i === selected ? ' is-selected' : ''), onClick: function () { setSelected(i); setPersonaCategory(personaGroupOf(r, personaOptions)); setShowPass(false); setStatus('') } },
                       h('span', { className: 'fr-room-connection' + (r.connected ? ' is-on' : '') }),
                       r.name || '未命名房间')
                   })
@@ -615,8 +630,18 @@ window.__ModuleLoader__.load({
                         h('span', { className: 'fr-persona-current' }, '当前选择 · ' +
                           ((personaOptions.find(function (p) { return p.id === (r.personaPreset || (r.persona ? 'custom' : 'follow')) }) || {}).label || '跟随智能体'))
                       ),
+                      h('div', { className: 'fr-persona-categories', role: 'tablist', 'aria-label': '聊天人设类型' },
+                        personaCategories.map(function (cat) {
+                          var count = personaOptions.filter(function (p) { return p.group === cat.id }).length
+                          return h('button', { key: cat.id, type: 'button', role: 'tab',
+                            'aria-selected': personaCategory === cat.id,
+                            className: 'fr-persona-category' + (personaCategory === cat.id ? ' is-active' : ''),
+                            onClick: function () { setPersonaCategory(cat.id) } },
+                            cat.label, h('span', { className: 'fr-persona-category-count' }, String(count)))
+                        })
+                      ),
                       h('fieldset', { className: 'fr-persona-choices', 'aria-labelledby': 'fish-persona-title' },
-                        personaOptions.map(function (p) {
+                        personaOptions.filter(function (p) { return p.group === personaCategory }).map(function (p) {
                           var active = (r.personaPreset || (r.persona ? 'custom' : 'follow')) === p.id
                           return h('label', { key: p.id, className: 'fr-persona-choice' + (active ? ' is-selected' : '') },
                             h('span', { className: 'fr-persona-choice-top' },
