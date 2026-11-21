@@ -82,7 +82,13 @@ function readJsonFile(file, fallback) {
 
 export function apply(ctx, config) {
     const cfg = { ...DEFAULTS, ...(config || {}), ...readJsonFile(ROOM_JSON, {}) }
-    const instanceId = String(config?.instanceId || randomUUID())
+    // 进程内单例：同一个房间只留一个实例（插件被重复 apply 时，先把旧的收掉）
+    const GLOBAL = (globalThis.__dshFishRoom || (globalThis.__dshFishRoom = {}))
+    const prev = GLOBAL[cfg.room]
+    if (prev && typeof prev.dispose === 'function') {
+        try { prev.dispose() } catch (e) { log('旧实例收尾失败：', e?.message || e) }
+    }
+    const instanceId = String(prev?.instanceId || config?.instanceId || randomUUID())
     let topic = cfg.topic || `dsh-room-${cfg.room}`
     let secret = createHash('sha256').update(String(cfg.passphrase || cfg.room)).digest()
     let selfName = cfg.displayName || 'agent'
@@ -713,7 +719,7 @@ load();setInterval(load,15000)
 
     void subscribe()
 
-    return () => {
+    const dispose = () => {
         stopped = true
         try { activeReader?.cancel?.() } catch { /* ignore */ }
         activeReader = null
@@ -726,4 +732,7 @@ load();setInterval(load,15000)
         watchers.clear()
         try { roomHandle?.dispose?.() } catch { /* ignore */ }
     }
+
+    GLOBAL[cfg.room] = { instanceId, dispose }
+    return dispose
 }
