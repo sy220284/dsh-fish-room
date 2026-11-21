@@ -308,10 +308,15 @@ export function apply(ctx, config) {
         const st = makeState(rc)
         // 同进程同房间：先收掉旧实例
         const prev = GLOBAL.rooms[rc.name]
+        // 收尾是异步的：先发起、记下 promise，等真正要用会话时再 await。
+        // 否则旧 agent 还占着会话的写句柄，新实例会报
+        // "already owned by an active write handle"。
+        let prevTeardown = null
         if (prev && typeof prev.dispose === 'function') {
-            try { prev.dispose() } catch (e) { log('旧实例收尾失败：', e?.message || e) }
+            try { prevTeardown = Promise.resolve(prev.dispose()).catch((e) => { log('旧实例收尾失败：', e?.message || e) }) } catch { /* ignore */ }
         }
         st.instanceId = prev?.instanceId || instanceId
+        st.prevTeardown = prevTeardown
         loadHistory(st)
         states.set(rc.name, st)
     }
@@ -667,6 +672,10 @@ export function apply(ctx, config) {
         st.promise = (async () => {
             const route = resolveRoute(st)
             const opts = { meta: { cwd: st.cfg.cwd || HOME }, ...(route ? { agentOptions: route } : {}) }
+            if (st.prevTeardown) {
+                try { await st.prevTeardown } catch { /* ignore */ }
+                st.prevTeardown = null
+            }
             await killLive(sid)
             // 先尝试恢复（保住上次的对话历史）
             try {
@@ -688,7 +697,7 @@ export function apply(ctx, config) {
                     log(`房间会话已开（清掉旧占用后）：${sid}`)
                     return st.handle
                 } catch (e2) {
-                    const alt = `${sid}-${st.instanceId.slice(0, 8)}`
+                    const alt = `${sid}-${randomUUID().slice(0, 8)}`
                     await killLive(alt)
                     try {
                         st.handle = await ctx.agents.create({ sessionId: alt, ...opts })
