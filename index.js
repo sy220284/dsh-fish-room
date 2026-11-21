@@ -37,6 +37,9 @@ const DEFAULTS = {
     maxRounds: 2, // 一条消息最多引发几轮来回
     cooldownSec: 15, // 两次自动回复的最小间隔
     cwd: '', // 房间会话工作目录
+    provider: '', // 房间 agent 用哪个 provider；留空 = 跟宿主默认
+    model: '', // 同上；model
+    reasoningEffort: '', // 同上；思考强度
 }
 
 const HOME = process.env.DSH_HOME || join(homedir(), '.dsh')
@@ -249,15 +252,31 @@ export function apply(ctx, config) {
     }
 
     // ── 房间会话 ───────────────────────────────────────────
+    /** 房间 agent 的模型路由：插件配置优先，其次宿主默认模型 */
+    function resolveRoute() {
+        if (cfg.provider && cfg.model) {
+            const r = { provider: cfg.provider, model: cfg.model }
+            if (cfg.reasoningEffort) r.reasoningEffort = cfg.reasoningEffort
+            return r
+        }
+        try {
+            const sel = ctx.agentDefaultModel?.currentSelection?.()
+            if (sel && sel.provider && sel.model) return sel
+        } catch { /* 拿不到就用插件配置 */ }
+        return undefined
+    }
+
     async function ensureRoomAgent() {
         if (roomHandle) return roomHandle
         if (roomPromise) return roomPromise
         const sid = `agent-room-${cfg.room}-${instanceId}`
         roomPromise = (async () => {
             try {
+                const route = resolveRoute()
                 const created = await ctx.agents.create({
                     sessionId: sid,
                     meta: { cwd: cfg.cwd || process.cwd() },
+                    ...(route ? { agentOptions: route } : {}),
                 })
                 roomHandle = created
                 log(`房间会话已开：${sid}`)
@@ -437,6 +456,9 @@ export function apply(ctx, config) {
             maxRounds: Number(cfg.maxRounds ?? 2),
             cooldownSec: Number(cfg.cooldownSec ?? 15),
             hasPassphrase: !!cfg.passphrase,
+            provider: cfg.provider || '',
+            model: cfg.model || '',
+            reasoningEffort: cfg.reasoningEffort || '',
         }
     }
 
@@ -584,7 +606,7 @@ load();setInterval(load,15000)
             }
             const body = await readBody(req)
             const next = { ...cfg }
-            for (const k of ['room', 'passphrase', 'displayName', 'persona', 'server', 'autoReply', 'maxRounds', 'cooldownSec', 'topic', 'cwd']) {
+            for (const k of ['room', 'passphrase', 'displayName', 'persona', 'server', 'autoReply', 'maxRounds', 'cooldownSec', 'topic', 'cwd', 'provider', 'model', 'reasoningEffort']) {
                 if (body[k] !== undefined) next[k] = body[k]
             }
             if (!next.room) { writeJson(res, 400, { error: '房间名不能为空' }); return }
