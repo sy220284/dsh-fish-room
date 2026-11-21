@@ -31,7 +31,7 @@ jobs:
       - uses: browser-actions/setup-chrome@v2
         id: chrome
       - name: 安装浏览器测试依赖
-        run: npm install --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+        run: npm install --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1 react@18.3.1 react-dom@18.3.1
       - name: 验证桌面及手机实际布局
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
