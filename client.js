@@ -113,40 +113,41 @@ window.__ModuleLoader__.load({
       })
     }
 
-    // ── 聊天主面板 ───────────────────────────────────────────
+    // ── 聊天工作区：两个入口共用 /fish-room/ui.css 的视觉系统 ──
     function ChatPanel() {
-      var st = useState({ ok: false, rooms: [], room: '', messages: [], members: [], me: { id: '' } })
-      var data = st[0]
-      var setData = st[1]
-      var st2 = useState('')
-      var room = st2[0]
-      var setRoom = st2[1]
-      var st3 = useState('')
-      var draft = st3[0]
-      var setDraft = st3[1]
-      var st4 = useState(false)
-      var busy = st4[0]
-      var setBusy = st4[1]
-      var st5 = useState(0)
-      var unread = st5[0]
-      var setUnread = st5[1]
-      var st6 = useState('')
-      var query = st6[0]
-      var setQuery = st6[1]
-      var st7 = useState(false)
-      var searching = st7[0]
-      var setSearching = st7[1]
-      var fileRef = useRef(null)
-      var esRef = useRef(null)
-      var seenRef = useRef({})
+      var state = useState({ ok: false, rooms: [], messages: [], members: [], me: { id: '' } })
+      var data = state[0], setData = state[1]
+      var roomState = useState(''), room = roomState[0], setRoom = roomState[1]
+      var draftState = useState(''), draft = draftState[0], setDraft = draftState[1]
+      var busyState = useState(false), busy = busyState[0], setBusy = busyState[1]
+      var fileState = useState(null), selectedFile = fileState[0], setSelectedFile = fileState[1]
+      var searchState = useState(false), searchOpen = searchState[0], setSearchOpen = searchState[1]
+      var queryState = useState(''), query = queryState[0], setQuery = queryState[1]
+      var resultState = useState(null), results = resultState[0], setResults = resultState[1]
+      var totalState = useState(0), searchTotal = totalState[0], setSearchTotal = totalState[1]
+      var searchingState = useState(false), searching = searchingState[0], setSearching = searchingState[1]
+      var errorState = useState(''), error = errorState[0], setError = errorState[1]
+      var unreadState = useState(0), unread = unreadState[0], setUnread = unreadState[1]
+      var memberState = useState(false), membersExpanded = memberState[0], setMembersExpanded = memberState[1]
+      var fileRef = useRef(null), textRef = useRef(null), listRef = useRef(null), searchRef = useRef(null)
+      var activeRoomRef = useRef(room), meRef = useRef(''), busyRef = useRef(false)
+      var draftsRef = useRef({}), seenRef = useRef({}), atBottomRef = useRef(true)
+      activeRoomRef.current = room
+      meRef.current = data.me && data.me.id
 
       var reload = useCallback(function () {
-        return api('/fish-room/state?room=' + encodeURIComponent(room), { cache: 'no-store' })
-          .then(function (j) { if (j && j.ok) setData(j); return j })
-          .catch(function () { return null })
+        var requested = room
+        return api('/fish-room/state?room=' + encodeURIComponent(requested), { cache: 'no-store' })
+          .then(function (j) {
+            if (j && j.ok && requested === activeRoomRef.current) { setData(j); return j }
+            if (j && j.error && requested === activeRoomRef.current) setError(j.error)
+            return j
+          }).catch(function (e) {
+            if (requested === activeRoomRef.current) setError('连接失败，请检查房间服务')
+            return null
+          })
       }, [room])
 
-      // 切换房间
       useEffect(function () {
         if (!room && data.rooms && data.rooms.length) setRoom(data.rooms[0].name)
       }, [data.rooms, room])
@@ -157,187 +158,245 @@ window.__ModuleLoader__.load({
         return function () { clearInterval(timer) }
       }, [reload])
 
-      // SSE：消息 / 思考 / 流式草稿
       useEffect(function () {
         if (!room) return
-        try { if (esRef.current) esRef.current.close() } catch (e) { /* ignore */ }
-        var es = null
-        try {
-          es = new EventSource('/fish-room/events?room=' + encodeURIComponent(room))
-          esRef.current = es
-          es.onmessage = function (e) {
-            try {
-              var p = JSON.parse(e.data)
-              if (p && p.type === 'message') {
-                if (p.message && p.message.from !== data.me.id) {
-                  seenRef.current[p.message.id] = 1
-                  if (document.hidden) {
-                    setUnread(function (n) { return n + 1 })
-                    try {
-                      if ('Notification' in window && Notification.permission === 'granted') {
-                        new Notification('鱼房间', { body: (p.message.fromName || '') + '：' + String(p.message.text || '').slice(0, 60) })
-                      }
-                    } catch (err) { /* ignore */ }
-                  }
-                }
-                reload()
-              } else if (p && p.type === 'status') {
-                reload()
+        var es = new EventSource('/fish-room/events?room=' + encodeURIComponent(room))
+        es.onmessage = function (event) {
+          var p
+          try { p = JSON.parse(event.data) } catch (e) { return }
+          if (p.type === 'message') {
+            var m = p.message
+            if (m && m.from !== meRef.current && !seenRef.current[room + ':' + m.id]) {
+              seenRef.current[room + ':' + m.id] = 1
+              if (document.hidden || !atBottomRef.current) setUnread(function (n) { return n + 1 })
+              if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+                new Notification('鱼房间 · ' + room, { body: (m.fromName || '') + '：' + String(m.text || '').slice(0, 80) })
               }
-            } catch (err) { /* ignore */ }
-          }
-        } catch (e) { /* SSE 不可用就靠轮询 */ }
-        return function () { try { if (es) es.close() } catch (err) { /* ignore */ } }
-      }, [room])
+            }
+            reload()
+          } else if (p.type === 'status' || p.type === 'draft') reload()
+        }
+        return function () { es.close() }
+      }, [room, reload])
+
+      useEffect(function () {
+        var visible = function () { if (!document.hidden && atBottomRef.current) setUnread(0) }
+        document.addEventListener('visibilitychange', visible)
+        return function () { document.removeEventListener('visibilitychange', visible) }
+      }, [])
+
+      var msgs = results === null ? (data.messages || []) : results
+      var lastId = msgs.length ? String(msgs[msgs.length - 1].id || '') : ''
+      useEffect(function () {
+        var el = listRef.current
+        if (el && (atBottomRef.current || results !== null)) {
+          el.scrollTop = results === null ? el.scrollHeight : 0
+        }
+      }, [room, lastId, msgs.length, results])
+      useEffect(function () { if (searchOpen && searchRef.current) searchRef.current.focus() }, [searchOpen])
+
+      var changeRoom = function (name) {
+        if (name === room) return
+        draftsRef.current[room] = draft
+        setDraft(draftsRef.current[name] || '')
+        setRoom(name)
+        setSearchOpen(false); setQuery(''); setResults(null)
+        setError(''); setUnread(0)
+        atBottomRef.current = true
+        setMembersExpanded(false)
+      }
 
       var send = function () {
         var text = draft.trim()
-        var file = fileRef.current && fileRef.current.files && fileRef.current.files[0]
-        if (!text && !file) return
-        setBusy(true)
-        var done = function () { setDraft(''); setBusy(false); return reload() }
-        if (!file) {
-          api('/fish-room/send', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ room: room, text: text }),
-          }).then(function (j) { if (!j || !j.ok) window.alert((j && j.error) || '发送失败'); return done() })
-            .catch(function () { setBusy(false) })
-          return
-        }
-        var reader = new FileReader()
-        reader.onload = function () {
-          var base64 = String(reader.result || '').split(',')[1] || ''
-          api('/fish-room/media', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ room: room, name: file.name, type: file.type, data: base64 }),
-          }).then(function (up) {
-            if (!up || !up.ok) throw new Error((up && up.error) || '上传失败')
-            return api('/fish-room/send', {
+        var file = selectedFile
+        if ((!text && !file) || busyRef.current || !room) return
+        busyRef.current = true
+        setBusy(true); setError('')
+        var upload = !file ? Promise.resolve([]) : new Promise(function (resolve, reject) {
+          var reader = new FileReader()
+          reader.onload = function () {
+            api('/fish-room/media', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ room: room, text: text, media: [up.media] }),
-            })
-          }).then(function (j) { if (!j || !j.ok) window.alert((j && j.error) || '发送失败'); return done() })
-            .catch(function (e) { window.alert(String(e && e.message ? e.message : e)); setBusy(false) })
-        }
-        reader.onerror = function () { setBusy(false) }
-        reader.readAsDataURL(file)
+              body: JSON.stringify({ room: room, name: file.name, type: file.type, data: String(reader.result || '').split(',')[1] || '' }),
+            }).then(function (up) {
+              if (!up || !up.ok || !up.media) throw new Error((up && up.error) || '附件上传失败')
+              resolve([up.media])
+            }).catch(reject)
+          }
+          reader.onerror = function () { reject(new Error('附件读取失败')) }
+          reader.readAsDataURL(file)
+        })
+        upload.then(function (media) {
+          return api('/fish-room/send', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ room: room, text: text, media: media }),
+          })
+        }).then(function (response) {
+          if (!response || !response.ok) throw new Error((response && response.error) || '发送失败')
+          setDraft(''); draftsRef.current[room] = ''
+          setSelectedFile(null)
+          if (fileRef.current) fileRef.current.value = ''
+          setSearchOpen(false); setQuery(''); setResults(null)
+          atBottomRef.current = true
+          return reload()
+        }).catch(function (e) {
+          setError(e && e.message ? e.message : '发送失败，请重试')
+        }).then(function () {
+          busyRef.current = false
+          setBusy(false)
+          if (textRef.current) textRef.current.focus()
+        })
       }
 
       var doSearch = function () {
-        setSearching(true)
-        api('/fish-room/history?room=' + encodeURIComponent(room) + '&limit=200&q=' + encodeURIComponent(query))
+        var searchTerm = query.trim(), requested = room
+        if (!searchTerm) { setResults(null); setSearchTotal(0); return }
+        setSearching(true); setError('')
+        api('/fish-room/history?room=' + encodeURIComponent(requested) + '&limit=200&q=' + encodeURIComponent(searchTerm))
           .then(function (j) {
-            if (j && j.ok) setData(function (prev) {
-              var next = Object.assign({}, prev)
-              next.messages = j.messages
-              next.searchTotal = j.total
-              return next
-            })
-          }).catch(function () { /* ignore */ }).then(function () { setSearching(false) })
+            if (requested !== activeRoomRef.current) return
+            if (!j || !j.ok) throw new Error((j && j.error) || '搜索失败')
+            setResults(j.messages || [])
+            setSearchTotal(j.total || 0)
+          }).catch(function (e) { if (requested === activeRoomRef.current) setError(e.message || '搜索失败') })
+          .then(function () { if (requested === activeRoomRef.current) setSearching(false) })
       }
 
-      var msgs = data.messages || []
+      var closeSearch = function () {
+        setSearchOpen(false); setResults(null); setQuery(''); setSearchTotal(0); setError('')
+        atBottomRef.current = true
+      }
+      var showLatest = function () {
+        atBottomRef.current = true
+        setUnread(0)
+        if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight
+      }
       var members = data.members || []
-      var cfg = data.config || {}
       var online = members.filter(function (m) { return m.online })
+      var cfg = data.config || {}
+      var rooms = data.rooms || []
+      var myName = data.me && data.me.name || '我'
+      var isConnected = !!cfg.connected
 
-      return h('div', { style: s.card },
-        h('div', { style: s.head },
-          h('span', { style: cfg.connected ? s.dotOn : s.dot }),
-          h('div', { style: s.title }, '鱼房间'),
-          h('span', { style: s.chip },
-            members.length ? members.slice(0, 4).map(function (m) { return m.name + (m.online ? '🟢' : '⚪') }).join('、') : '还没人说话'),
-          h('span', { style: s.chip }, '在线 ' + online.length),
-          h('span', { style: { flex: 1 } }),
-          h('button', { style: s.ghost, onClick: function () { reload() } }, '刷新'),
-          h('button', {
-            style: s.ghost,
-            onClick: function () {
-              try {
-                if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission()
-                else window.alert('浏览器通知：' + (typeof Notification === 'undefined' ? '不支持' : Notification.permission))
-              } catch (e) { /* ignore */ }
-            },
-          }, '通知')
+      return h('div', { className: 'fr-root' },
+        h('link', { rel: 'stylesheet', href: '/fish-room/ui.css' }),
+        h('aside', { className: 'fr-sidebar' + (membersExpanded ? ' fr-members-open' : '') },
+          h('div', { className: 'fr-brand' },
+            h('span', { className: 'fr-brand-mark', 'aria-hidden': true }, '≈'),
+            h('div', null, h('div', { className: 'fr-brand-title' }, '鱼房间'), h('div', { className: 'fr-brand-sub' }, 'AGENT COMMON ROOM'))
+          ),
+          h('div', { className: 'fr-side-label' }, '我的房间 ', h('span', null, rooms.length)),
+          h('nav', { className: 'fr-rooms', 'aria-label': '切换房间' },
+            rooms.map(function (r) {
+              var count = r.name === room ? members.filter(function (m) { return m.online }).length : null
+              return h('button', {
+                key: r.name, type: 'button', className: 'fr-room' + (r.name === room ? ' is-active' : ''),
+                'aria-current': r.name === room ? 'page' : undefined,
+                title: '进入房间 ' + r.name, onClick: function () { changeRoom(r.name) },
+              }, h('span', { className: 'fr-room-glyph', 'aria-hidden': true }, '#'),
+                 h('span', { className: 'fr-room-name' }, r.name),
+                 h('span', { className: 'fr-room-connection' + (r.connected ? ' is-on' : ''), title: r.connected ? '已连接' : '未连接' }))
+            })
+          ),
+          h('div', { className: 'fr-members-head' },
+            h('div', { className: 'fr-side-label' }, '房间成员 ', h('span', null, online.length + ' 在线')),
+            h('button', { type: 'button', className: 'fr-mobile-members', onClick: function () { setMembersExpanded(!membersExpanded) }, 'aria-expanded': membersExpanded }, membersExpanded ? '收起' : '查看')
+          ),
+          h('div', { className: 'fr-members' },
+            members.length ? members.map(function (m, i) {
+              return h('div', { className: 'fr-member', key: m.name + ':' + i },
+                h('span', { className: 'fr-avatar fr-avatar-small' }, String(m.name || '?').slice(0, 1).toUpperCase()),
+                h('span', { className: 'fr-member-name' }, m.name),
+                h('span', { className: 'fr-member-status' + (m.online ? ' is-on' : ''), title: m.online ? '在线' : '离线' }))
+            }) : h('div', { className: 'fr-members-empty' }, '成员将在首次发言后出现')
+          ),
+          h('div', { className: 'fr-side-foot' }, h('span', { className: 'fr-presence' + (isConnected ? ' is-on' : '') }), isConnected ? '消息中继已连接' : '等待中继连接')
         ),
-
-        // 房间切换
-        h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
-          (data.rooms || []).map(function (r) {
-            return h('button', {
-              key: r.name,
-              style: Object.assign({}, s.tab, r.name === room ? s.tabOn : {}),
-              onClick: function () { setRoom(r.name); setUnread(0); setQuery('') },
-            }, r.name + (r.connected ? ' ●' : ''))
-          })
-        ),
-
-        // 搜索
-        h('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
-          h('input', {
-            className: 'x', style: Object.assign({}, s.field, { flex: 1 }),
-            value: query, placeholder: '搜房间里的历史（人名、关键词）',
-            onChange: function (e) { setQuery(e.target.value) },
-            onKeyDown: function (e) { if (e.key === 'Enter') doSearch() },
-          }),
-          h('button', { style: s.ghost, onClick: doSearch }, searching ? '搜着…' : '搜索'),
-          h('button', {
-            style: s.ghost,
-            onClick: function () { window.open('/fish-room/export?room=' + encodeURIComponent(room) + '&fmt=md', '_blank') },
-          }, '导出'),
-          data.searchTotal ? h('span', { style: s.hint }, data.searchTotal + ' 条命中') : null
-        ),
-
-        // 消息
-        h('div', { style: s.list },
-          msgs.length === 0
-            ? h('div', { style: { color: C.sub, textAlign: 'center', padding: '40px 0' } }, '房间里还没有人说话。发一句，或者等对面的鱼先开口。')
-            : msgs.map(function (m) {
-                var mine = data.me && m.from === data.me.id
-                var style = mine ? s.msgMine : s.msg
-                if (!mine && m.kind === 'agent') style = Object.assign({}, style, s.msgAgent)
-                if (!mine && m.kind === 'guest') style = Object.assign({}, style, s.msgGuest)
-                return h('div', { key: m.id, style: Object.assign({}, style, { alignSelf: mine ? 'flex-end' : 'flex-start' }) },
-                    !mine && h('div', { style: s.who },
-                        h('span', null, m.fromName || '?'),
-                        m.kind === 'agent' ? h('span', { style: { color: '#a58cff' } }, '· agent') : null,
-                        m.kind === 'guest' ? h('span', { style: { color: '#d9a441' } }, '· 访客') : null),
-                    h('div', null, m.text),
-                    mediaNodes(m),
-                    h('div', { style: s.time }, fmtTime(m.ts)))
-              })
-        ),
-
-        cfg.typing ? h('div', { style: { color: C.sub, fontSize: 12 } }, '…对方正在想…') : null,
-
-        h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
-          h('button', { style: s.ghost, onClick: function () { setDraft('在吗？') } }, '在吗？'),
-          h('button', { style: s.ghost, onClick: function () { setDraft('你是谁呀？') } }, '你是谁呀？'),
-          h('button', { style: s.ghost, onClick: function () { setDraft('说说你自己') } }, '说说你自己'),
-          h('button', { style: s.ghost, onClick: function () { setDraft('来聊聊最近的事') } }, '来聊聊最近的事')
-        ),
-
-        h('div', { style: { display: 'flex', gap: 8, alignItems: 'flex-end' } },
-          h('textarea', {
-            style: s.input, value: draft, ref: fileRef,
-            placeholder: '在房间里说点什么…（Enter 发送，Shift+Enter 换行；📎 可发图/文件）',
-            onChange: function (e) { setDraft(e.target.value) },
-            onKeyDown: function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } },
-          }),
-          h('button', {
-            style: s.ghost,
-            onClick: function () {
-              var inp = document.getElementById('fishroom-file')
-              if (inp) inp.click()
-            },
-          }, '📎'),
-          h('input', {
-            id: 'fishroom-file', type: 'file', style: { display: 'none' },
-            ref: function (el) { fileRef.current = el },
-          }),
-          h('button', { style: s.btn, disabled: busy, onClick: send }, busy ? '发送中…' : '发送')
-        ),
-        unread > 0 ? h('div', { style: s.hint }, '有 ' + unread + ' 条新消息') : null
+        h('section', { className: 'fr-conversation', 'aria-label': '房间聊天' },
+          h('header', { className: 'fr-chat-head' },
+            h('div', { className: 'fr-chat-heading' },
+              h('div', { className: 'fr-kicker' }, '正在交谈'),
+              h('div', { className: 'fr-heading-line' },
+                h('h1', null, room || '鱼房间'),
+                h('span', { className: 'fr-status' + (isConnected ? ' is-on' : '') }, isConnected ? '已连接' : '未连接')
+              ),
+              h('div', { className: 'fr-subtitle' }, online.length + ' 人在线 · ' + (members.length || 0) + ' 位成员')
+            ),
+            h('div', { className: 'fr-head-actions' },
+              h('button', { type: 'button', className: 'fr-icon-button' + (searchOpen ? ' is-active' : ''), onClick: function () { if (searchOpen) closeSearch(); else setSearchOpen(true) }, title: '搜索聊天记录', 'aria-label': '搜索聊天记录' }, '⌕'),
+              h('button', { type: 'button', className: 'fr-icon-button fr-refresh', onClick: reload, title: '刷新消息', 'aria-label': '刷新消息' }, '↻'),
+              h('button', { type: 'button', className: 'fr-text-button', onClick: function () { window.open('/fish-room/export?room=' + encodeURIComponent(room) + '&fmt=md', '_blank', 'noopener') }, title: '导出当前房间聊天记录' }, '导出记录')
+            )
+          ),
+          searchOpen ? h('form', { className: 'fr-search', onSubmit: function (e) { e.preventDefault(); doSearch() } },
+            h('input', { ref: searchRef, type: 'search', value: query, placeholder: '搜索消息内容或发言者', 'aria-label': '搜索消息', onChange: function (e) { setQuery(e.target.value); if (!e.target.value) setResults(null) } }),
+            h('button', { type: 'submit', className: 'fr-search-submit', disabled: searching }, searching ? '搜索中' : '查找'),
+            h('button', { type: 'button', className: 'fr-close-search', onClick: closeSearch }, '关闭'),
+            results !== null ? h('span', { className: 'fr-search-count', role: 'status' }, '找到 ' + searchTotal + ' 条' + (searchTotal > msgs.length ? '，显示最近 ' + msgs.length + ' 条' : '')) : null
+          ) : null,
+          h('div', { className: 'fr-message-area', ref: listRef, role: 'log', 'aria-live': 'polite', 'aria-label': '聊天消息',
+            onScroll: function (e) {
+              var el = e.currentTarget
+              atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100
+              if (atBottomRef.current && !document.hidden) setUnread(0)
+            }
+          },
+            !data.ok ? h('div', { className: 'fr-empty' }, h('strong', null, '正在连接房间'), h('p', null, '聊天记录将在连接成功后显示。')) :
+            !msgs.length ? h('div', { className: 'fr-empty' },
+              h('span', { className: 'fr-empty-mark', 'aria-hidden': true }, '≈'),
+              h('strong', null, results !== null ? '没有找到相关消息' : '从一句话开始'),
+              h('p', null, results !== null ? '换个关键词试试，或关闭搜索查看全部消息。' : '房间已经准备好。发出第一条消息，其他成员就能加入交谈。')
+            ) : msgs.map(function (m, i) {
+              var mine = m.from === (data.me && data.me.id)
+              var role = m.kind === 'agent' ? '智能体' : m.kind === 'guest' ? '访客' : '成员'
+              var day = new Date(m.ts).toDateString()
+              var prevDay = i ? new Date(msgs[i - 1].ts).toDateString() : ''
+              var separator = day !== prevDay ? h('div', { className: 'fr-day', key: 'day:' + i }, new Date(m.ts).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })) : null
+              return h(React.Fragment, { key: m.id || i },
+                separator,
+                h('article', { className: 'fr-message' + (mine ? ' fr-mine' : '') },
+                  !mine ? h('span', { className: 'fr-avatar', 'aria-hidden': true }, String(m.fromName || '?').slice(0, 1).toUpperCase()) : null,
+                  h('div', { className: 'fr-message-content' },
+                    h('div', { className: 'fr-message-meta' },
+                      h('strong', null, mine ? myName : (m.fromName || '未知成员')),
+                      !mine ? h('span', { className: 'fr-role' }, role) : null,
+                      h('time', { dateTime: m.ts ? new Date(m.ts).toISOString() : undefined }, fmtTime(m.ts))
+                    ),
+                    h('div', { className: 'fr-bubble' }, m.text || '', mediaNodes(m))
+                  )
+                )
+              )
+            })
+          ),
+          unread > 0 && results === null ? h('button', { type: 'button', className: 'fr-new-messages', onClick: showLatest }, unread + ' 条新消息 · 跳到最新') : null,
+          h('div', { className: 'fr-bottom' },
+            cfg.typing ? h('div', { className: 'fr-typing', role: 'status' },
+              h('span', { className: 'fr-typing-dots', 'aria-hidden': true }, '•••'),
+              cfg.draft ? String(cfg.draft).slice(0, 220) : '有成员正在思考…'
+            ) : null,
+            error ? h('div', { className: 'fr-error', role: 'alert' }, error, h('button', { type: 'button', onClick: function () { setError('') }, 'aria-label': '关闭错误提示' }, '×')) : null,
+            h('div', { className: 'fr-composer' },
+              selectedFile ? h('div', { className: 'fr-attachment' },
+                h('span', null, '附件 · ' + selectedFile.name),
+                h('button', { type: 'button', onClick: function () { setSelectedFile(null); if (fileRef.current) fileRef.current.value = '' }, disabled: busy, 'aria-label': '移除附件' }, '移除')
+              ) : null,
+              h('textarea', { ref: textRef, value: draft, disabled: busy, rows: 2,
+                placeholder: '向房间发送消息…', 'aria-label': '输入聊天消息',
+                onChange: function (e) { setDraft(e.target.value); draftsRef.current[room] = e.target.value },
+                onKeyDown: function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() } }
+              }),
+              h('div', { className: 'fr-compose-actions' },
+                h('div', { className: 'fr-compose-left' },
+                  h('button', { type: 'button', className: 'fr-attach-button', disabled: busy,
+                    onClick: function () { if (fileRef.current) fileRef.current.click() }, 'aria-label': '添加附件' }, '＋', h('span', null, '附件')),
+                  h('input', { ref: fileRef, type: 'file', className: 'fr-file-input', 'aria-label': '选择附件', onChange: function (e) { setSelectedFile(e.target.files && e.target.files[0] || null) } }),
+                  h('span', { className: 'fr-compose-hint' }, 'Enter 发送 · Shift + Enter 换行')
+                ),
+                h('button', { type: 'button', className: 'fr-send', disabled: busy || (!draft.trim() && !selectedFile) || !room, onClick: send }, busy ? '发送中…' : '发送', h('span', { 'aria-hidden': true }, ' ↗'))
+              )
+            )
+          )
+        )
       )
     }
 
