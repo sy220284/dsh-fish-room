@@ -496,6 +496,7 @@ window.__ModuleLoader__.load({
           if (seen[name]) return '房间名称不能重复：' + name
           seen[name] = true
           if (!/^https?:\/\/[^ \t\r\n]+$/i.test(String(r.server || ''))) return '请填写有效的中继地址（http:// 或 https://）'
+          if (r.topic && /[\/\\?#\x00-\x1f]/.test(r.topic)) return '中继主题不能包含路径或查询符号'
           if (!r.displayName || !String(r.displayName).trim()) return '请填写房间「' + name + '」里的显示名字'
           if (r.maxRounds < 0 || r.maxRounds > 6 || !Number.isInteger(r.maxRounds)) return '最多来回轮次应在 0～6 之间'
           if (r.cooldownSec < 0 || r.cooldownSec > 300 || !Number.isInteger(r.cooldownSec)) return '接话冷却应在 0～300 秒之间'
@@ -514,7 +515,7 @@ window.__ModuleLoader__.load({
           delete o._passphrase
           delete o._originalName
           o.originalName = r._originalName || ''
-          o.passphrase = r._passphrase || '******'
+          o.passphrase = r._passphrase || (r._originalName ? '******' : '')
           o.name = r.name.trim()
           o.displayName = r.displayName.trim()
           o.server = r.server.trim()
@@ -565,7 +566,7 @@ window.__ModuleLoader__.load({
                     h('div', { className: 'fr-settings-section-head' }, h('span', { className: 'fr-section-num' }, '01'),
                       h('div', null, h('h3', null, '房间信息'), h('p', null, '用于识别房间和聊天中的身份。'))),
                     h('div', { className: 'fr-settings-grid' },
-                      textField(r, i, 'name', '房间名称', '参与者使用相同的房间名称与口令才能互相通信。', { placeholder: '例如：海湾讨论' }),
+                      textField(r, i, 'name', '房间名称', '参与者使用相同名称与口令才能通信。更改名称将进入新房间，原历史仍保存在本机。', { placeholder: '例如：海湾讨论' }),
                       textField(r, i, 'displayName', '我的显示名称', '聊天时其他成员看到的名字。', { placeholder: '例如：小鱼' }),
                       h('div', { className: 'fr-field fr-field-full' },
                         h('label', { htmlFor: 'fish-room-pass' }, '房间口令'),
