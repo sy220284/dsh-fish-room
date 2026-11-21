@@ -259,10 +259,18 @@ export function apply(ctx, config) {
             if (cfg.reasoningEffort) r.reasoningEffort = cfg.reasoningEffort
             return r
         }
-        try {
-            const sel = ctx.agentDefaultModel?.currentSelection?.()
+        // 宿主默认模型服务（不声明成 inject 依赖，免得起不来）
+        const pick = (svc) => {
+            try { return svc?.currentSelection?.() } catch { return undefined }
+        }
+        const candidates = []
+        try { candidates.push(ctx.get?.('agentDefaultModel')) } catch { /* ignore */ }
+        try { candidates.push(ctx.agentDefaultModel) } catch { /* ignore */ }
+        for (const svc of candidates) {
+            const sel = pick(svc)
             if (sel && sel.provider && sel.model) return sel
-        } catch { /* 拿不到就用插件配置 */ }
+        }
+        log('拿不到宿主默认模型，房间 agent 将没有模型（可在设置里指定 provider/model）')
         return undefined
     }
 
