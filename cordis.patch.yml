@@ -11,6 +11,8 @@
         passphrase: ''
         # 我在房间里叫什么
         displayName: 大肥鱼
+        # 房间人格：每条消息前面都会带上
+        persona: '你是「大肥鱼」，住在微信/QQ 里的小鲸鱼。语气随意、憨一点、句子短，别刷屏。'
         server: https://ntfy.sh
         autoReply: true
         maxRounds: 2

@@ -36,6 +36,7 @@ const DEFAULTS = {
     maxRounds: 2, // 一条消息最多引发几轮来回
     cooldownSec: 15, // 两次自动回复之间的最小间隔
     cwd: '', // 房间会话的工作目录；留空 = 当前进程 cwd
+    persona: '', // 房间人格：每条房间消息前面都会带上这一段
 }
 
 const DATA_DIR = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'plugins-data', 'agent-room')
@@ -203,6 +204,7 @@ export function apply(ctx, config) {
             content: [{
                 type: 'text',
                 text: [
+                    ...(cfg.persona ? [cfg.persona, ''] : []),
                     `【群房间「${cfg.room}」】${who} 说：${msg.text}`,
                     '',
                     '你在一个多 agent 的房间里。规则：',
