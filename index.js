@@ -55,7 +55,23 @@ const ROOM_DEFAULTS = {
     turnTimeoutSec: 180, // 一轮接话最长等待
 }
 
-const GLOBAL = (globalThis.__dshFishRoom || (globalThis.__dshFishRoom = { rooms: {} }))
+// 进程内单例。**必须兼容旧版本的形状**：旧版直接用「房间名 → 实例」当一层 map，
+// 插件热重载时 globalThis 不会被清掉，照旧形状读会炸（undefined['房间名']）。
+let GLOBAL = globalThis.__dshFishRoom
+if (!GLOBAL || typeof GLOBAL !== 'object') GLOBAL = {}
+if (!GLOBAL.rooms || typeof GLOBAL.rooms !== 'object') {
+    const legacy = {}
+    for (const k of Object.keys(GLOBAL)) {
+        if (k === 'rooms') continue
+        const v = GLOBAL[k]
+        if (v && typeof v.dispose === 'function') {
+            try { v.dispose() } catch { /* ignore */ }
+        }
+        legacy[k] = v
+    }
+    GLOBAL.rooms = legacy
+}
+globalThis.__dshFishRoom = GLOBAL
 
 function log(...a) {
     const line = `[${new Date().toISOString()}] ${a.map(x => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ')}`
