@@ -176,6 +176,8 @@ const PERSONA_BY_ID = new Map(PERSONA_PRESETS.map(item => [item.id, item]))
 const PUBLIC_PERSONAS = PERSONA_PRESETS.map(({ id, label, description, example, group }) => ({
     id, label, description, example, group: group || (id === 'custom' ? 'custom' : 'standard'),
 }))
+// 测试和页面预览使用与设置接口完全一致的公开展示数据，避免样图使用虚构占位文案。
+export const personaPreviewCatalog = PUBLIC_PERSONAS
 function selectedPersonaId(config) {
     if (config.personaPreset) return String(config.personaPreset)
     return String(config.persona || '').trim() ? 'custom' : 'follow'
