@@ -499,7 +499,10 @@ window.__ModuleLoader__.load({
       var jumpToSection = function (section) {
         var root = settingsRootRef.current
         var target = root && root.querySelector('[data-room-section="' + section + '"]')
-        if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' })
+        if (target) {
+          if (target.tagName === 'DETAILS') target.open = true
+          target.scrollIntoView({ block: 'start', behavior: 'smooth' })
+        }
       }
 
       var personaGroupOf = function (room, choices) {
@@ -650,7 +653,7 @@ window.__ModuleLoader__.load({
       }
       return h(React.Fragment, null,
         h('link', { rel: 'stylesheet', href: '/fish-room/ui.css' }),
-        h('div', { className: 'fr-settings' + (props.embedded ? ' fr-settings-embedded' : '') },
+        h('div', { ref: settingsRootRef, className: 'fr-settings' + (props.embedded ? ' fr-settings-embedded' : '') },
           h('div', { className: 'fr-settings-heading' },
             h('div', null, h('div', { className: 'fr-kicker' }, 'FISH ROOM · SETTINGS'),
               h('h2', null, '鱼房间设置'),
@@ -665,16 +668,24 @@ window.__ModuleLoader__.load({
               h('div', { className: 'fr-settings-toolbar' },
                 h('div', { className: 'fr-settings-tabs', role: 'tablist', 'aria-label': '选择房间' },
                   rooms.map(function (r, i) {
-                    return h('button', { key: r._key, type: 'button', role: 'tab', 'aria-selected': i === selected, className: 'fr-settings-tab' + (i === selected ? ' is-selected' : ''), onClick: function () { setSelected(i); setPersonaCategory(personaGroupOf(r, personaOptions)); setShowPass(false); setStatus('') } },
+                    return h('button', { key: r._key, type: 'button', role: 'tab', 'aria-selected': i === selected, className: 'fr-settings-tab' + (i === selected ? ' is-selected' : ''), onClick: function () { selectedRoomRef.current = r.name; setSelected(i); setPersonaCategory(personaGroupOf(r, personaOptions)); setShowPass(false); setStatus('') } },
                       h('span', { className: 'fr-room-connection' + (r.connected ? ' is-on' : '') }),
                       r.name || '未命名房间')
                   })
                 ),
-                h('button', { type: 'button', className: 'fr-settings-add', onClick: addRoom }, '＋ 新建房间')
+                h('button', { type: 'button', className: 'fr-settings-add', onClick: addRoom,
+                  disabled: rooms.length >= settingsMeta.maxRooms }, '＋ 新建房间')
+              ),
+              h('nav', { className: 'fr-settings-jump', 'aria-label': '跳转到设置章节' },
+                (settingsMeta.sections || []).map(function (section, position) {
+                  return h('button', { key: section, type: 'button', className: 'fr-settings-jump-button',
+                    onClick: function () { jumpToSection(position + 1) } },
+                    h('span', { 'aria-hidden': true }, String(position + 1).padStart(2, '0')), section)
+                })
               ),
               rooms[selected] ? (function (r, i) {
                 return h('div', { key: r._key, className: 'fr-settings-form', role: 'tabpanel' },
-                  h('section', { className: 'fr-settings-card' },
+                  h('section', { className: 'fr-settings-card', 'data-room-section': '1' },
                     h('div', { className: 'fr-settings-section-head' }, h('span', { className: 'fr-section-num' }, '01'),
                       h('div', null, h('h3', null, '房间信息'), h('p', null, '用于识别房间和聊天中的身份。'))),
                     h('div', { className: 'fr-settings-grid' },
@@ -690,7 +701,7 @@ window.__ModuleLoader__.load({
                         h('span', { className: 'fr-field-help' }, '口令用于消息加密，请通过可信渠道与其他成员一致设置。'))
                     )
                   ),
-                  h('section', { className: 'fr-settings-card' },
+                  h('section', { className: 'fr-settings-card', 'data-room-section': '2' },
                     h('div', { className: 'fr-settings-section-head' }, h('span', { className: 'fr-section-num' }, '02'),
                       h('div', null, h('h3', null, '连接设置'), h('p', null, '配置消息传输位置。连接变更后，插件自动重新订阅。'))),
                     h('div', { className: 'fr-settings-grid' },
@@ -702,7 +713,7 @@ window.__ModuleLoader__.load({
                       textField(r, i, 'topic', '中继主题（可选）', '留空时按照房间名称自动生成。', { full: true, placeholder: '自动：dsh-room-房间名' })
                     )
                   ),
-                  h('section', { className: 'fr-settings-card' },
+                  h('section', { className: 'fr-settings-card', 'data-room-section': '3' },
                     h('div', { className: 'fr-settings-section-head' }, h('span', { className: 'fr-section-num' }, '03'),
                       h('div', null, h('h3', null, '聊天与自动接话'), h('p', null, '控制 Agent 是否自动参与房间对话和回复频率。'))),
                     h('label', { className: 'fr-settings-switch' },
@@ -736,21 +747,26 @@ window.__ModuleLoader__.load({
                               h('input', { type: 'radio', name: 'fish-persona-' + r._key, value: p.id,
                                 checked: active, onChange: function () { update(i, 'personaPreset', p.id) } }),
                               h('strong', null, p.label)),
-                            h('span', { className: 'fr-persona-desc' }, p.description),
-                            h('span', { className: 'fr-persona-example' }, '语气示例：' + p.example)
+                            h('span', { className: 'fr-persona-desc' }, p.description)
                           )
                         })
+                      ),
+                      h('div', { className: 'fr-persona-preview', role: 'status' },
+                        h('div', { className: 'fr-persona-preview-label' }, '当前人设 · 语气预览'),
+                        h('p', null, (personaOptions.find(function (p) {
+                          return p.id === (r.personaPreset || (r.persona ? 'custom' : 'follow'))
+                        }) || {}).example || '使用你的个性化人设接话')
                       ),
                       (r.personaPreset || (r.persona ? 'custom' : 'follow')) === 'custom'
                         ? h('div', { className: 'fr-persona-custom' },
                           h('label', { htmlFor: 'fish-setting-' + i + '-persona' }, '自己编写人设'),
                           h('textarea', { id: 'fish-setting-' + i + '-persona', rows: 5,
-                            maxLength: 2000, value: r.persona || '',
+                            maxLength: settingsMeta.maxPersonaLength, value: r.persona || '',
                             placeholder: '例如：你是一位沉稳、有幽默感的聊天伙伴。说话自然，擅长倾听，偶尔提出有趣的问题。回复保持简洁，不要反复自我介绍。',
                             onChange: function (e) { update(i, 'persona', e.target.value) } }),
                           h('div', { className: 'fr-persona-custom-foot' },
                             h('span', null, '保存后用于下一轮接话；切回自定义时仍可继续编辑先前填写的内容。'),
-                            h('span', { className: 'fr-persona-count' }, String((r.persona || '').length) + ' / 2000')
+                            h('span', { className: 'fr-persona-count' }, String((r.persona || '').length) + ' / ' + settingsMeta.maxPersonaLength)
                           )
                         ) : null
                     ),
@@ -759,7 +775,7 @@ window.__ModuleLoader__.load({
                       textField(r, i, 'cooldownSec', '接话冷却（秒）', '范围 0～300，避免短时间连续接话。', { type: 'number', min: 0, max: 300 })
                     )
                   ),
-                  h('details', { className: 'fr-settings-card fr-settings-disclosure' },
+                  h('details', { className: 'fr-settings-card fr-settings-disclosure', 'data-room-section': '4' },
                     h('summary', null, h('span', { className: 'fr-section-num' }, '04'), h('span', null, h('strong', null, '成员与权限'), h('small', null, '管理成员访问与消息过滤'))),
                     h('div', { className: 'fr-settings-grid' },
                       textField(r, i, 'owner', '房间主人（可选）', '显示名称须与实际发言者一致。'),
@@ -767,7 +783,7 @@ window.__ModuleLoader__.load({
                       textField(r, i, 'deny', '不接话成员', '每行一个名字。', { multiline: true, list: true })
                     )
                   ),
-                  h('details', { className: 'fr-settings-card fr-settings-disclosure' },
+                  h('details', { className: 'fr-settings-card fr-settings-disclosure', 'data-room-section': '5' },
                     h('summary', null, h('span', { className: 'fr-section-num' }, '05'), h('span', null, h('strong', null, '高级设置'), h('small', null, '模型和运行环境，通常沿用 DSH 默认配置即可'))),
                     h('div', { className: 'fr-settings-grid' },
                       textField(r, i, 'provider', '模型提供方', '可留空，沿用 DSH 默认。'),
