@@ -75,7 +75,9 @@ export function apply(ctx, config) {
     const seen = new Set()
     let lastReplyAt = 0
     let spokeThisTurn = false
-    let roomHandle = null
+    let roomHandle = null // 房间会话的 agent handle
+    let roomPromise = null // 创建会话的 promise（避免并发重复创建）
+    let turnBusy = false // 同时只跑一轮，避免消息堆叠
     let stopped = false
     let gen = 0 // 房间参数变了就 +1，让旧的订阅循环退出重连
     let connected = false
