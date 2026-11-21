@@ -142,6 +142,24 @@ window.__ModuleLoader__.load({
       })
     }
 
+    // 页面组件接收已归一化的 UI 契约，由显示层负责文案、状态和交互。
+    function ConnectionBadge(props) {
+      var connection = props.connection
+      return h('span', { className: 'fr-status' + (connection.state === 'online' ? ' is-on' : ''),
+        role: 'status', 'aria-label': '房间连接状态：' + connection.label }, connection.label)
+    }
+
+    function PersonaChoice(props) {
+      var choice = props.choice
+      return h('label', { className: 'fr-persona-choice' + (props.selected ? ' is-selected' : '') },
+        h('span', { className: 'fr-persona-choice-top' },
+          h('input', { type: 'radio', name: props.radioName, value: choice.id,
+            checked: props.selected, onChange: props.onSelect }),
+          h('strong', null, choice.label)),
+        h('span', { className: 'fr-persona-desc' }, choice.description)
+      )
+    }
+
     // ── 聊天工作区：两个入口共用 /fish-room/ui.css 的视觉系统 ──
     // 全部操作图标使用相同的线宽与 20px 绘制框，避免操作栏混用字符与 emoji。
     function UiGlyph(props) {
@@ -387,7 +405,7 @@ window.__ModuleLoader__.load({
               h('div', { className: 'fr-kicker' }, 'FISH ROOM', h('span', { className: 'fr-kicker-divider', 'aria-hidden': true }, ' / '), '正在交谈'),
               h('div', { className: 'fr-heading-line' },
                 h('h1', null, room || '鱼房间'),
-                h('span', { className: 'fr-status' + (isConnected ? ' is-on' : '') }, connection.label)
+                h(ConnectionBadge, { connection: connection })
               ),
               h('div', { className: 'fr-subtitle' }, presence.online + ' 人在线 · ' + presence.total + ' 位成员 · 人设：' + persona.label)
             ),
@@ -742,13 +760,9 @@ window.__ModuleLoader__.load({
                       h('fieldset', { className: 'fr-persona-choices', 'aria-labelledby': 'fish-persona-title' },
                         personaOptions.filter(function (p) { return p.group === personaCategory }).map(function (p) {
                           var active = (r.personaPreset || (r.persona ? 'custom' : 'follow')) === p.id
-                          return h('label', { key: p.id, className: 'fr-persona-choice' + (active ? ' is-selected' : '') },
-                            h('span', { className: 'fr-persona-choice-top' },
-                              h('input', { type: 'radio', name: 'fish-persona-' + r._key, value: p.id,
-                                checked: active, onChange: function () { update(i, 'personaPreset', p.id) } }),
-                              h('strong', null, p.label)),
-                            h('span', { className: 'fr-persona-desc' }, p.description)
-                          )
+                          return h(PersonaChoice, { key: p.id, choice: p, selected: active,
+                            radioName: 'fish-persona-' + r._key,
+                            onSelect: function () { update(i, 'personaPreset', p.id) } })
                         })
                       ),
                       h('div', { className: 'fr-persona-preview', role: 'status' },
