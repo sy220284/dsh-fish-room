@@ -31,10 +31,10 @@ const personaChoices=[
   ['concise','简洁干练','standard'],['curious','好奇探索','standard'],
   ['tieba_bro','贴吧老哥','tieba'],['tieba_hot','贴吧神评','tieba'],
   ['tieba_fun','贴吧乐子人','tieba'],
-  ['thunder_absurd','雷霆抽象','thunder'],['thunder_roast','雷霆锐评','thunder'],
-  ['thunder_sarcasm','雷霆阴阳','thunder'],['thunder_rant','雷霆暴躁','thunder'],
-  ['thunder_tough','雷霆嘴硬','thunder'],['thunder_drama','雷霆戏精','thunder'],
-  ['thunder_riddle','雷霆谜语人','thunder'],['thunder_meme','雷霆梗王','thunder'],
+  ['thunder_absurd','抽象','thunder'],['thunder_roast','锐评','thunder'],
+  ['thunder_sarcasm','阴阳','thunder'],['thunder_rant','暴躁','thunder'],
+  ['thunder_tough','嘴硬','thunder'],['thunder_drama','戏精','thunder'],
+  ['thunder_riddle','谜语人','thunder'],['thunder_meme','梗王','thunder'],
   ['custom','自定义人设','custom'],
 ].map(([id,label,group])=>({id,label,group,
   description:group==='thunder'?'充满戏剧反差的雷霆系对话':group==='tieba'?'贴吧社区特色聊天':'跟随或自选的表达方式',
@@ -195,7 +195,7 @@ try {
       await page.getByRole('tab',{name:/雷霆/}).click()
       assert.equal(await page.locator('.fr-persona-choice').count(),8,'雷霆类应有 8 款')
       await page.locator('input[type="radio"][value="thunder_rant"]').check()
-      assert.match(await page.locator('.fr-persona-current').textContent(),/雷霆暴躁/)
+      assert.match(await page.locator('.fr-persona-current').textContent(),/暴躁/)
       await page.screenshot({path:'screenshots/embedded-mobile-persona-thunder.png',fullPage:true})
       await page.getByRole('tab',{name:/自定义/}).click()
       await page.locator('input[type="radio"][value="custom"]').check()
