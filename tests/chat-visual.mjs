@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import { readFileSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { chromium } from 'playwright-core'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
+const require=createRequire(import.meta.url)
 
 const source = readFileSync(new URL('../index.js', import.meta.url), 'utf8')
 function readConst(name) {
@@ -10,6 +13,9 @@ function readConst(name) {
   return JSON.parse(match[1])
 }
 const pageHtml=readConst('PAGE'), css=readConst('CHAT_CSS')
+const clientJs=readFileSync(new URL('../client.js',import.meta.url),'utf8')
+const reactUmd=join(dirname(require.resolve('react/package.json')),'umd','react.development.js')
+const reactDomUmd=join(dirname(require.resolve('react-dom/package.json')),'umd','react-dom.development.js')
 const messages=[
   {id:'1',from:'other',fromName:'小青鱼',kind:'agent',ts:1763721000000,text:'房间连接成功。我们可以在这里同步讨论想法。'},
   {id:'2',from:'self',fromName:'我',kind:'human',ts:1763721060000,text:'先检查一下聊天页面的阅读体验，看看长消息、成员状态和输入区域是否清楚。'},
@@ -18,9 +24,27 @@ const messages=[
 ]
 const rooms=[{name:'海湾讨论',connected:true},{name:'协作试验',connected:true},{name:'归档回看',connected:false}]
 const members=[{name:'小青鱼',online:true},{name:'白鲸助手',online:true},{name:'海岸观察员',online:false}]
+let lastSettingsPayload=null
+let settingsRooms=rooms.map(r=>({...r,displayName:'本机小鱼',server:'https://ntfy.sh',transport:'ntfy',topic:'dsh-room-'+r.name,
+  hasPassphrase:true,persona:'聊天简短清楚',autoReply:true,maxRounds:2,cooldownSec:15,turnTimeoutSec:180,
+  allow:[],deny:[],owner:'',provider:'',model:'',cwd:''}))
+
 const server=createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost')
   res.setHeader('Cache-Control','no-store')
+  if(url.pathname==='/host'){
+    res.setHeader('Content-Type','text/html; charset=utf-8')
+    res.end('<!doctype html><html lang="zh-CN"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link href="/fish-room/ui.css" rel="stylesheet"></head><body style="margin:0;background:#111a1c;color:#edf4f0"><main id="dsh-host"></main></body></html>');return
+  }
+  if(url.pathname==='/fish-room/settings'){
+    res.setHeader('Content-Type','application/json; charset=utf-8')
+    if(req.method==='POST'){
+      const chunks=[];for await(const chunk of req)chunks.push(chunk)
+      lastSettingsPayload=JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      settingsRooms=lastSettingsPayload.rooms.map(r=>({...r,hasPassphrase:!!r.passphrase,connected:true}))
+    }
+    res.end(JSON.stringify({ok:true,rooms:settingsRooms}));return
+  }
   if(url.pathname==='/fish-room'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(pageHtml);return}
   if(url.pathname==='/fish-room/ui.css'){res.setHeader('Content-Type','text/css; charset=utf-8');res.end(css);return}
   if(url.pathname==='/fish-room/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store'});res.write(': alive\n\n');req.on('close',()=>res.end());return}
@@ -92,6 +116,69 @@ try {
     console.log(name,JSON.stringify(layout))
     await page.close()
   }
+  // 验证 DSH 宿主内的真实 React 插件入口：聊天面板、聊天内设置、设置分区
+  async function mountDsh(page, component) {
+    await page.goto(base+'/host',{waitUntil:'domcontentloaded'})
+    await page.evaluate(()=>{window.__ModuleLoader__={load(entry){this.entry=entry}}})
+    await page.addScriptTag({path:reactUmd})
+    await page.addScriptTag({path:reactDomUmd})
+    await page.addScriptTag({content:clientJs})
+    await page.evaluate(which=>{
+      const plugin=window.__ModuleLoader__.entry.factory(name=> {
+        if(name==='react')return window.React
+        throw Error('未知依赖 '+name)
+      })
+      const slots={
+        inject(name,callback){callback();return ()=>{}},
+        register(info,Component) {
+          if(info.name===which) {
+            window.ReactDOM.createRoot(document.getElementById('dsh-host')).render(window.React.createElement(Component))
+          }
+          return ()=>{}
+        },
+      }
+      plugin.apply({slots})
+    },component)
+  }
+  for(const [name,width,height] of [['embedded-desktop',1440,900],['embedded-mobile',390,844],['embedded-small',320,700]]){
+    const page=await browser.newPage({viewport:{width,height},deviceScaleFactor:1})
+    const errors=[]
+    page.on('pageerror',e=>errors.push(e.message))
+    await mountDsh(page,'main')
+    await page.locator('.fr-chat-heading').waitFor()
+    await page.locator('.fr-message').first().waitFor()
+    await page.screenshot({path:'screenshots/'+name+'-chat.png',fullPage:true})
+    const metrics=await page.evaluate(()=>({width:document.documentElement.scrollWidth,viewport:innerWidth,
+      mainHeight:document.querySelector('.fr-message-area').getBoundingClientRect().height,
+      sendVisible:document.querySelector('.fr-send').getBoundingClientRect().height>0}))
+    assert.ok(metrics.width<=metrics.viewport+1,name+' 宿主页不应出现水平溢出 '+JSON.stringify(metrics))
+    assert.ok(metrics.mainHeight>100&&metrics.sendVisible,name+' 消息区和发送控件必须可用')
+    await page.getByRole('button',{name:'房间设置'}).click()
+    await page.locator('.fr-settings-overlay .fr-settings').waitFor()
+    await page.screenshot({path:'screenshots/'+name+'-settings.png',fullPage:true})
+    const settingsLayout=await page.evaluate(()=>({width:document.documentElement.scrollWidth,viewport:innerWidth,
+      saveVisible:document.querySelector('.fr-settings-savebar').getBoundingClientRect().height>0}))
+    assert.ok(settingsLayout.width<=settingsLayout.viewport+1,name+' 设置不应产生水平溢出')
+    assert.equal(settingsLayout.saveVisible,true,'保存操作应可用')
+    if(name==='embedded-mobile'){
+      await page.locator('#fish-setting-0-displayName').fill('新显示名称')
+      await page.locator('.fr-settings-submit').click()
+      await page.getByText('配置已保存并应用，连接状态会在页面中更新').waitFor()
+      assert.equal(lastSettingsPayload.rooms[0].displayName,'新显示名称')
+      assert.equal(lastSettingsPayload.rooms[0].originalName,'海湾讨论')
+      await page.locator('.fr-settings-close').click()
+      await page.locator('.fr-chat-heading').waitFor()
+      await page.locator('.fr-message').first().waitFor()
+    }
+    assert.deepEqual(errors,[],name+' 的 React 组件运行报错')
+    await page.close()
+  }
+  const settingsPage=await browser.newPage({viewport:{width:390,height:844}})
+  await mountDsh(settingsPage,'settings.section')
+  await settingsPage.getByRole('heading',{name:'鱼房间设置'}).waitFor()
+  assert.equal(await settingsPage.locator('.fr-settings-card').count(),5,'DSH 原设置分区应展示完整的设置结构')
+  await settingsPage.screenshot({path:'screenshots/dsh-settings-section.png',fullPage:true})
+  await settingsPage.close()
 } finally {
   await browser.close()
   server.close()
