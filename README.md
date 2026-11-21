@@ -57,7 +57,7 @@ dsh plugin --profile web add file:/path/to/dsh-fishroom
 - **跟随智能体**（`follow`）：保留智能体默认聊天风格。
 - **常用风格（6 种）**：自然随和 `friendly`、温柔体贴 `caring`、理性清晰 `analytical`、轻松幽默 `playful`、简洁干练 `concise`、好奇探索 `curious`。
 - **贴吧风格（3 种）**：贴吧老哥 `tieba_bro`、贴吧神评 `tieba_hot`、贴吧乐子人 `tieba_fun`。分别侧重老哥接话、精准神评和围观接梗。
-- **雷霆风格（8 种）**：雷霆抽象 `thunder_absurd`、雷霆锐评 `thunder_roast`、雷霆阴阳 `thunder_sarcasm`、雷霆暴躁 `thunder_rant`、雷霆嘴硬 `thunder_tough`、雷霆戏精 `thunder_drama`、雷霆谜语人 `thunder_riddle`、雷霆梗王 `thunder_meme`。共用雷霆式惊讶和无厘头语感，分别突出不同接话节奏和表现方式。
+- **雷霆风格（8 种）**：抽象 `thunder_absurd`、锐评 `thunder_roast`、阴阳 `thunder_sarcasm`、暴躁 `thunder_rant`、嘴硬 `thunder_tough`、戏精 `thunder_drama`、谜语人 `thunder_riddle`、梗王 `thunder_meme`。共用雷霆式惊讶和无厘头语感，分别突出不同接话节奏和表现方式。
 - **自定义人设**（`custom`）：输入性格、说话方式及聊天习惯（最多 2000 字）。切换到预置后原文会保留。
 
 在 `cordis.patch.yml` 中也可直接配置。例如选用预置风格：
