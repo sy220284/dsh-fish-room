@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync, mkdirSync } from 'node:fs'
+import { personaPreviewCatalog } from '../index.js'
 import { createServer } from 'node:http'
 import { chromium } from 'playwright-core'
 import { createRequire } from 'node:module'
@@ -24,21 +25,8 @@ const messages=[
 ]
 const rooms=[{name:'海湾讨论',connected:true},{name:'协作试验',connected:true},{name:'归档回看',connected:false}]
 const members=[{name:'小青鱼',online:true},{name:'白鲸助手',online:true},{name:'海岸观察员',online:false}]
-const personaChoices=[
-  ['follow','跟随智能体','standard'],
-  ['friendly','自然随和','standard'],['caring','温柔体贴','standard'],
-  ['analytical','理性清晰','standard'],['playful','轻松幽默','standard'],
-  ['concise','简洁干练','standard'],['curious','好奇探索','standard'],
-  ['tieba_bro','贴吧老哥','tieba'],['tieba_hot','贴吧神评','tieba'],
-  ['tieba_fun','贴吧乐子人','tieba'],
-  ['thunder_absurd','抽象','thunder'],['thunder_roast','锐评','thunder'],
-  ['thunder_sarcasm','阴阳','thunder'],['thunder_rant','暴躁','thunder'],
-  ['thunder_tough','嘴硬','thunder'],['thunder_drama','戏精','thunder'],
-  ['thunder_riddle','谜语人','thunder'],['thunder_meme','梗王','thunder'],
-  ['custom','自定义人设','custom'],
-].map(([id,label,group])=>({id,label,group,
-  description:group==='thunder'?'充满戏剧反差的雷霆系对话':group==='tieba'?'贴吧社区特色聊天':'跟随或自选的表达方式',
-  example:'一句贴合角色特点的聊天回复'}))
+const personaChoices=personaPreviewCatalog
+
 let lastSettingsPayload=null
 let settingsRooms=rooms.map(r=>({...r,displayName:'本机小鱼',server:'https://ntfy.sh',transport:'ntfy',topic:'dsh-room-'+r.name,personaPreset:'follow',persona:'',
   hasPassphrase:true,persona:'聊天简短清楚',autoReply:true,maxRounds:2,cooldownSec:15,turnTimeoutSec:180,
@@ -49,7 +37,7 @@ const server=createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store')
   if(url.pathname==='/host'){
     res.setHeader('Content-Type','text/html; charset=utf-8')
-    res.end('<!doctype html><html lang="zh-CN"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link href="/fish-room/ui.css" rel="stylesheet"></head><body style="margin:0;background:#111a1c;color:#edf4f0"><main id="dsh-host"></main></body></html>');return
+    res.end('<!doctype html><html lang="zh-CN"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link href="/fish-room/ui.css" rel="stylesheet"></head><body style="margin:0;background:#0d191f;color:#e9f4f3"><main id="dsh-host"></main></body></html>');return
   }
   if(url.pathname==='/fish-room/settings'){
     res.setHeader('Content-Type','application/json; charset=utf-8')
