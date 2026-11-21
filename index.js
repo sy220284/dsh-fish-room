@@ -40,7 +40,8 @@ const ROOM_DEFAULTS = {
     name: '', // 房间名（双方约定）
     passphrase: '', // 共享口令（加密密钥 + 准入）
     displayName: '', // 我在房间里叫什么
-    persona: '', // 房间人格
+    persona: '', // 自定义人设正文（兼容旧版）
+    personaPreset: 'follow', // 跟随智能体 / 预置人设 / 自定义
     server: 'https://ntfy.sh', // 中继地址
     transport: 'ntfy', // 'ntfy' 公共中继 | 'http' 自建/自选中继（与 IM 无关，任意通道都能进）
     topic: '', // 中继 topic；留空 = dsh-room-<name>
@@ -54,6 +55,67 @@ const ROOM_DEFAULTS = {
     model: '', // 同上
     cwd: '', // 房间 agent 的工作目录；留空 = DSH_HOME（这样能读到 AGENTS.md）
     turnTimeoutSec: 180, // 一轮接话最长等待
+}
+
+// 单一来源：设置页读取预置人设，自动接话从同一目录解析实际指令。
+const PERSONA_PRESETS = Object.freeze([
+    {
+        id: 'follow', label: '跟随智能体',
+        description: '沿用当前 DSH 智能体的聊天方式，不额外规定性格。',
+        example: '保持原有风格', prompt: '',
+    },
+    {
+        id: 'friendly', label: '自然随和',
+        description: '像熟悉的朋友一样聊天，亲近、平实，不刻意表演。',
+        example: '嗯，这事挺有意思，接着说。',
+        prompt: '你在房间中以自然随和的朋友形象交流。语气轻松、真实、有来有往；注意回应对方具体说了什么，避免生硬套话和过分热情。',
+    },
+    {
+        id: 'caring', label: '温柔体贴',
+        description: '善于倾听，回应细腻，尊重对方情绪和边界。',
+        example: '我在听，你可以慢慢说。',
+        prompt: '你在房间中以温柔体贴、善于倾听的性格交流。先理解对方表达的情绪和具体处境，回应细腻、真诚、克制，不居高临下。',
+    },
+    {
+        id: 'analytical', label: '理性清晰',
+        description: '抓住重点，逻辑明确，适合讨论问题和交换观点。',
+        example: '这里有两个关键点，我们逐个看。',
+        prompt: '你在房间中表现得理性、清醒、思路清晰。抓住对话重点，先理解问题再表达观点；需要分析时分清事实、判断和不确定性，避免机械罗列。',
+    },
+    {
+        id: 'playful', label: '轻松幽默',
+        description: '有趣机灵，适度调侃，让聊天更有活力。',
+        example: '这剧情发展得比我预想的还精彩。',
+        prompt: '你在房间中保持轻松、机灵、有幽默感的性格。善用自然的玩笑和巧妙回应，适时收敛，不挖苦他人，不为了搞笑而忽略对方的话。',
+    },
+    {
+        id: 'concise', label: '简洁干练',
+        description: '回复短而准确，少寒暄，尽快说到重点。',
+        example: '结论先说：这个办法可行。',
+        prompt: '你在房间中以简洁干练的风格说话。回答直接、准确、少废话；优先用简短自然的句子表达重点，只有必要时才展开。',
+    },
+    {
+        id: 'curious', label: '好奇探索',
+        description: '喜欢提问和联想，擅长共同寻找新思路。',
+        example: '如果换个角度想，会发生什么？',
+        prompt: '你在房间中以好奇、开放、富有探索欲的性格交流。善于联想、提出有价值的问题并接住对方想法；问题要有针对性，不连续追问。',
+    },
+    {
+        id: 'custom', label: '自定义人设',
+        description: '自己设定智能体的性格、说话方式和聊天习惯。',
+        example: '按你编写的内容参与聊天', prompt: '',
+    },
+])
+const PERSONA_BY_ID = new Map(PERSONA_PRESETS.map(item => [item.id, item]))
+const PUBLIC_PERSONAS = PERSONA_PRESETS.map(({ id, label, description, example }) => ({ id, label, description, example }))
+function selectedPersonaId(config) {
+    if (config.personaPreset) return String(config.personaPreset)
+    return String(config.persona || '').trim() ? 'custom' : 'follow'
+}
+function resolvedPersona(config) {
+    const id = selectedPersonaId(config)
+    if (id === 'custom') return String(config.persona || '').trim()
+    return PERSONA_BY_ID.get(id)?.prompt || ''
 }
 
 // 进程内单例。**必须兼容旧版本的形状**：旧版直接用「房间名 → 实例」当一层 map，
@@ -115,7 +177,8 @@ function normalizeRooms(config, fileCfg) {
     else if (Array.isArray(cfg.rooms) && cfg.rooms.length) list = cfg.rooms      // profile patch
     else list = [{ ...cfg, ...file }]                                          // 旧的单房间写法
     return list
-        .map(r => ({ ...ROOM_DEFAULTS, ...r, name: String(r.name || r.room || '').trim() }))
+        .map(r => ({ ...ROOM_DEFAULTS, ...r, name: String(r.name || r.room || '').trim(),
+            personaPreset: selectedPersonaId(r), persona: String(r.persona || '') }))
         .filter(r => r.name)
         .map(r => ({
             ...r,
@@ -584,7 +647,12 @@ export function apply(ctx, config) {
             content: [{
                 type: 'text',
                 text: [
-                    ...(st.cfg.persona ? [st.cfg.persona, ''] : []),
+                    ...(resolvedPersona(st.cfg) ? [
+                        '【当前聊天人设：' + (PERSONA_BY_ID.get(selectedPersonaId(st.cfg))?.label || '自定义人设') + '】',
+                        resolvedPersona(st.cfg),
+                        '请从这一轮起按此人设的交流方式回复，并结合当前对话语境自然表达。',
+                        '',
+                    ] : []),
                     ...(recent ? ['【最近几轮】', recent, ''] : []),
                     `【群房间「${st.cfg.name}」】${who} 说：${msg.text}` + mediaNote,
                     '',
@@ -813,6 +881,10 @@ export function apply(ctx, config) {
                 if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password)
                     return '房间「' + room + '」的中继地址无效'
             } catch { return '房间「' + room + '」的中继地址无效' }
+            const personaId = selectedPersonaId(r)
+            if (!PERSONA_BY_ID.has(personaId)) return '房间「' + room + '」的人设选项无效'
+            if (String(r.persona || '').length > 2000) return '房间「' + room + '」的自定义人设不能超过 2000 字'
+            if (personaId === 'custom' && !String(r.persona || '').trim()) return '请填写房间「' + room + '」的自定义聊天人设'
             const topic = String(r.topic || '')
             if (topic && (topic.length > 128 || /[\/\\?#\x00-\x1f]/.test(topic)))
                 return '房间「' + room + '」的中继主题不合法'
@@ -937,6 +1009,8 @@ export function apply(ctx, config) {
             typing: st.typing,
             draft: st.draft,
             persona: st.cfg.persona,
+            personaPreset: selectedPersonaId(st.cfg),
+            personaLabel: PERSONA_BY_ID.get(selectedPersonaId(st.cfg))?.label || '跟随智能体',
             server: st.cfg.server,
             transport: st.cfg.transport || 'ntfy',
             autoReply: !!st.cfg.autoReply,
@@ -1044,7 +1118,7 @@ export function apply(ctx, config) {
         reg('/fish-room/settings', async (req, res) => {
             if (!isTrusted(req)) { writeJson(res, 403, { error: 'forbidden' }); return }
             if (String(req.method).toUpperCase() === 'GET') {
-                writeJson(res, 200, { ok: true, rooms: [...states.values()].map(publicRoom) })
+                writeJson(res, 200, { ok: true, rooms: [...states.values()].map(publicRoom), personas: PUBLIC_PERSONAS })
                 return
             }
             if (String(req.method).toUpperCase() !== 'POST') {
@@ -1082,7 +1156,7 @@ export function apply(ctx, config) {
                 writeJson(res, 500, { error: '保存或应用房间配置失败：' + (e?.message || e) })
                 return
             }
-            writeJson(res, 200, { ok: true, rooms: [...states.values()].map(publicRoom) })
+            writeJson(res, 200, { ok: true, rooms: [...states.values()].map(publicRoom), personas: PUBLIC_PERSONAS })
         })
 
         reg('/fish-room/send', async (req, res) => {
