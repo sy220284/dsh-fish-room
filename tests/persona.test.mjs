@@ -92,7 +92,16 @@ test('预置与自定义人设保存后进入真实 Agent 接话指令，并兼�
   assert.equal(first.json.rooms[0].personaPreset,'custom','旧版 persona 必须转为自定义模式')
   assert.equal(first.json.rooms[0].persona,'旧版自定义：说话慢一点、语气沉稳')
   const ids=first.json.personas.map(p=>p.id)
-  assert.deepEqual(ids,['follow','friendly','caring','analytical','playful','concise','curious','custom'])
+  assert.deepEqual(ids,['follow','friendly','caring','analytical','playful','concise','curious',
+    'tieba_bro','tieba_hot','tieba_fun',
+    'thunder_absurd','thunder_roast','thunder_sarcasm','thunder_rant',
+    'thunder_tough','thunder_drama','thunder_riddle','thunder_meme','custom'])
+  const groupCounts=Object.fromEntries(['standard','tieba','thunder','custom'].map(group=>[
+    group,first.json.personas.filter(p=>p.group===group).length,
+  ]))
+  assert.deepEqual(groupCounts,{standard:7,tieba:3,thunder:8,custom:1},
+    '服务端必须完整返回分类，无重复或遗漏')
+  assert.equal(new Set(ids).size,ids.length,'人设 ID 不能重复')
   assert.ok(first.json.personas.every(p=>p.label&&p.description&&p.example&&!('prompt' in p)),
     'UI 只接收人设展示信息，执行指令以服务端为准')
 
@@ -143,6 +152,17 @@ test('预置与自定义人设保存后进入真实 Agent 接话指令，并兼�
     ['playful','轻松幽默'],
     ['concise','简洁干练'],
     ['curious','好奇探索'],
+    ['tieba_bro','贴吧老哥'],
+    ['tieba_hot','贴吧神评'],
+    ['tieba_fun','贴吧乐子人'],
+    ['thunder_absurd','雷霆抽象'],
+    ['thunder_roast','雷霆锐评'],
+    ['thunder_sarcasm','雷霆阴阳'],
+    ['thunder_rant','雷霆暴躁'],
+    ['thunder_tough','雷霆嘴硬'],
+    ['thunder_drama','雷霆戏精'],
+    ['thunder_riddle','雷霆谜语人'],
+    ['thunder_meme','雷霆梗王'],
   ]
   for (let i=0;i<otherStyles.length;i++){
     const [id,label]=otherStyles[i]
@@ -151,20 +171,26 @@ test('预置与自定义人设保存后进入真实 Agent 接话指令，并兼�
     assert.equal(chosenStyle.json.rooms[0].personaLabel,label)
     const prompt=await receive('逐项验证 '+label,i+3)
     assert.ok(prompt.includes('【当前聊天人设：'+label+'】'),'人设标签必须随选择变化')
+    if (id.startsWith('thunder_')) {
+      assert.match(prompt,/雷霆系共同语感/,'雷霆各变体应该共享抽象口头禅的基调')
+      assert.match(prompt,/吓我一雷霆/)
+    } else {
+      assert.doesNotMatch(prompt,/雷霆系共同语感/,'贴吧和常用人设不能混入雷霆话风')
+    }
     assert.doesNotMatch(prompt,/旧版自定义：说话慢一点、语气沉稳/)
   }
 
   const customText='你是一个见多识广但不卖弄学识的旅行者，说话简短，喜欢贴近生活的比喻。'
   const custom=await save({personaPreset:'custom',persona:customText})
   assert.equal(custom.status,200,JSON.stringify(custom.json))
-  const customPrompt=await receive('切换自定义后的试聊',8)
+  const customPrompt=await receive('切换自定义后的试聊',19)
   assert.match(customPrompt,/【当前聊天人设：自定义人设】/)
   assert.ok(customPrompt.includes(customText))
   assert.doesNotMatch(customPrompt,/理性、清醒、思路清晰/)
 
   const follow=await save({personaPreset:'follow'})
   assert.equal(follow.status,200)
-  const defaultPrompt=await receive('跟随智能体的试聊',9)
+  const defaultPrompt=await receive('跟随智能体的试聊',20)
   assert.doesNotMatch(defaultPrompt,/【当前聊天人设：/)
   assert.doesNotMatch(defaultPrompt,/见多识广但不卖弄学识/)
   assert.match(defaultPrompt,/群房间「角色讨论」/)
@@ -180,5 +206,5 @@ test('预置与自定义人设保存后进入真实 Agent 接话指令，并兼�
   const disk=JSON.parse(readFileSync(join(home,'plugins-data','fishroom','room.json'),'utf8'))
   assert.equal(disk.rooms[0].personaPreset,'follow')
   assert.equal(disk.rooms[0].persona,customText,'切换回预置后应保留自定义草稿')
-  assert.ok(outgoing.length>=9,'每次自动接话都应通过消息中继发布')
+  assert.ok(outgoing.length>=20,'每次自动接话都应通过消息中继发布')
 })
