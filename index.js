@@ -14,7 +14,7 @@
  */
 
 import { createHash, createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto'
-import { appendFileSync, mkdirSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 // 零依赖：SessionId 的品牌化只是编译期的事，运行时就是字符串；
@@ -40,6 +40,7 @@ const DEFAULTS = {
 }
 
 const DATA_DIR = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'plugins-data', 'agent-room')
+const ROOM_JSON = join(DATA_DIR, 'room.json')
 const LOG_FILE = join(DATA_DIR, 'room.log')
 
 function log(...a) {
@@ -51,8 +52,19 @@ function log(...a) {
     } catch { /* 日志写不了就算了 */ }
 }
 
+/** 插件自有配置文件：存在就盖过 profile 里的配置（方便一行命令进房） */
+function readRoomFile() {
+    try {
+        if (!existsSync(ROOM_JSON)) return {}
+        const raw = JSON.parse(readFileSync(ROOM_JSON, 'utf8'))
+        return raw && typeof raw === 'object' ? raw : {}
+    } catch {
+        return {}
+    }
+}
+
 export function apply(ctx, config) {
-    const cfg = { ...DEFAULTS, ...(config || {}) }
+    const cfg = { ...DEFAULTS, ...(config || {}), ...readRoomFile() }
     if (!cfg.room) {
         log('未配置 room，插件不启动')
         return
