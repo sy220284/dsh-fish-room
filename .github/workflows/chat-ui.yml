@@ -1,0 +1,50 @@
+name: 聊天界面回归检查
+on:
+  pull_request:
+    paths:
+      - 'client.js'
+      - 'index.js'
+      - 'tests/**'
+      - '.github/workflows/chat-ui.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client.js'
+      - 'index.js'
+      - 'tests/**'
+      - '.github/workflows/chat-ui.yml'
+jobs:
+  chat-ui:
+    name: 页面语法与操作回归
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: 检查脚本语法
+        run: |
+          node --check index.js
+          node --check client.js
+      - name: 验证聊天页面交互
+        run: node --test tests/chat-ui.test.mjs tests/room-settings.test.mjs tests/persona.test.mjs
+      - name: 安装中文字体用于真实界面截图验收
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends fonts-noto-cjk
+          fc-match "PingFang SC" | head -1
+      - uses: browser-actions/setup-chrome@v2
+        id: chrome
+      - name: 安装浏览器测试依赖
+        run: npm install --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1 react@18.3.1 react-dom@18.3.1
+      - name: 验证桌面及手机实际布局
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+        run: node tests/chat-visual.mjs
+      - name: 上传界面截图
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fish-room-chat-screenshots
+          path: screenshots/*.png
+          if-no-files-found: ignore
