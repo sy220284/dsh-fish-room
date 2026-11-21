@@ -483,10 +483,9 @@ window.__ModuleLoader__.load({
       var source = useState(null), rooms = source[0], setRooms = source[1]
       var presetSource = useState([]), personaOptions = presetSource[0], setPersonaOptions = presetSource[1]
       var personaCategoryState = useState('standard'), personaCategory = personaCategoryState[0], setPersonaCategory = personaCategoryState[1]
-      var personaCategories = [
-        { id: 'standard', label: '常用' }, { id: 'tieba', label: '贴吧' },
-        { id: 'thunder', label: '雷霆' }, { id: 'custom', label: '自定义' },
-      ]
+      var settingsMetaState = useState({ personaGroups: [], maxRooms: 32, maxPersonaLength: 2000, sections: [] })
+      var settingsMeta = settingsMetaState[0], setSettingsMeta = settingsMetaState[1]
+      var personaCategories = settingsMeta.personaGroups
       var selectedState = useState(0), selected = selectedState[0], setSelected = selectedState[1]
       var statusState = useState(''), status = statusState[0], setStatus = statusState[1]
       var errorState = useState(false), isError = errorState[0], setIsError = errorState[1]
@@ -494,7 +493,14 @@ window.__ModuleLoader__.load({
       var dirtyState = useState(false), dirty = dirtyState[0], setDirty = dirtyState[1]
       var visibleState = useState(false), showPass = visibleState[0], setShowPass = visibleState[1]
       var focusRef = useRef(null)
+      var settingsRootRef = useRef(null)
+      var selectedRoomRef = useRef('')
       var nextId = useRef(1)
+      var jumpToSection = function (section) {
+        var root = settingsRootRef.current
+        var target = root && root.querySelector('[data-room-section="' + section + '"]')
+        if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      }
 
       var personaGroupOf = function (room, choices) {
         if (!room) return 'standard'
@@ -506,13 +512,16 @@ window.__ModuleLoader__.load({
       var readSettings = useCallback(function () {
         setStatus('')
         return api('/fish-room/settings', { cache: 'no-store' }).then(function (j) {
-          if (!j || !j.ok) throw new Error((j && j.error) || '无法读取房间设置')
-          if (!Array.isArray(j.personas) || !j.personas.length) throw new Error('预置人设列表读取失败')
+          settingsView(j)
+          var matched = j.rooms.findIndex(function (r) { return r.name === selectedRoomRef.current })
+          var index = matched < 0 ? 0 : matched
+          selectedRoomRef.current = j.rooms[index] && j.rooms[index].name || ''
+          setSettingsMeta(j.ui)
           setPersonaOptions(j.personas)
-          setPersonaCategory(personaGroupOf((j.rooms || [])[0], j.personas))
-          setSelected(0)
-          setRooms((j.rooms || []).map(function (r) { return Object.assign({}, r, { _originalName: r.name, _passphrase: '', _key: 'room-' + nextId.current++ }) }))
-          setDirty(false)
+          setPersonaCategory(personaGroupOf(j.rooms[index], j.personas))
+          setSelected(index)
+          setRooms(j.rooms.map(function (r) { return Object.assign({}, r, { _originalName: r.name, _passphrase: '', _key: 'room-' + nextId.current++ }) }))
+          setIsError(false); setDirty(false)
           return j
         }).catch(function (e) { setIsError(true); setStatus(e.message || '无法读取配置') })
       }, [])
@@ -548,12 +557,16 @@ window.__ModuleLoader__.load({
       }
 
       var addRoom = function () {
+        if (rooms && rooms.length >= settingsMeta.maxRooms) {
+          setIsError(true); setStatus('最多可创建 ' + settingsMeta.maxRooms + ' 个房间'); return
+        }
         setRooms(function (prev) {
           var used = new Set(prev.map(function (r) { return r.name }))
           var n = 1
           while (used.has('新房间-' + n)) n++
           setSelected(prev.length)
           setPersonaCategory('standard')
+          selectedRoomRef.current = '新房间-' + n
           return prev.concat([{ name: '新房间-' + n, _key: 'new-' + nextId.current++, _passphrase: '',
             _originalName: '', displayName: '', persona: '', personaPreset: 'follow', server: 'https://ntfy.sh', transport: 'ntfy',
             topic: '', allow: [], deny: [], owner: '', autoReply: true, maxRounds: 2, cooldownSec: 15,
@@ -566,8 +579,12 @@ window.__ModuleLoader__.load({
       var removeRoom = function () {
         if (!rooms || rooms.length < 2) { setIsError(true); setStatus('至少保留一个房间'); return }
         if (!window.confirm('删除这个房间的配置？保存后将退出该房间，历史记录仍保留在本地。')) return
-        setRooms(function (prev) { return prev.filter(function (_, i) { return i !== selected }) })
-        setSelected(function (value) { return Math.max(0, Math.min(value, rooms.length - 2)) })
+        var nextRooms = rooms.filter(function (_, i) { return i !== selected })
+        var nextIndex = Math.max(0, Math.min(selected, nextRooms.length - 1))
+        selectedRoomRef.current = nextRooms[nextIndex].name
+        setRooms(nextRooms)
+        setSelected(nextIndex)
+        setPersonaCategory(personaGroupOf(nextRooms[nextIndex], personaOptions))
         setDirty(true)
         setStatus('')
       }
@@ -587,7 +604,7 @@ window.__ModuleLoader__.load({
           if (r.turnTimeoutSec < 15 || r.turnTimeoutSec > 600 || !Number.isInteger(r.turnTimeoutSec)) return '回答等待时间应在 15～600 秒之间'
           var personaId = r.personaPreset || (String(r.persona || '').trim() ? 'custom' : 'follow')
           if (!personaOptions.some(function (p) { return p.id === personaId })) return '请选择有效的聊天人设'
-          if (String(r.persona || '').length > 2000) return '自定义聊天人设最多填写 2000 字'
+          if (String(r.persona || '').length > settingsMeta.maxPersonaLength) return '自定义聊天人设最多填写 ' + settingsMeta.maxPersonaLength + ' 字'
           if (personaId === 'custom' && !String(r.persona || '').trim()) return '请先填写自定义聊天人设'
         }
         return ''
@@ -612,9 +629,15 @@ window.__ModuleLoader__.load({
         })
         api('/fish-room/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rooms: payload }) })
           .then(function (j) {
-            if (!j || !j.ok) throw new Error((j && j.error) || '保存失败')
-            setPersonaOptions(Array.isArray(j.personas) ? j.personas : [])
-          setRooms((j.rooms || []).map(function (r) { return Object.assign({}, r, { _originalName: r.name, _passphrase: '', _key: 'room-' + nextId.current++ }) }))
+            settingsView(j)
+            var keepName = rooms[selected] && rooms[selected].name.trim()
+            var matched = j.rooms.findIndex(function (r) { return r.name === keepName })
+            var nextIndex = matched < 0 ? 0 : matched
+            selectedRoomRef.current = j.rooms[nextIndex] && j.rooms[nextIndex].name || ''
+            setSettingsMeta(j.ui)
+            setPersonaOptions(j.personas)
+            setRooms(j.rooms.map(function (r) { return Object.assign({}, r, { _originalName: r.name, _passphrase: '', _key: 'room-' + nextId.current++ }) }))
+            setSelected(nextIndex); setPersonaCategory(personaGroupOf(j.rooms[nextIndex], j.personas))
             setDirty(false); setIsError(false); setShowPass(false)
             setStatus('配置已保存并应用，连接状态会在页面中更新')
           }).catch(function (e) { setIsError(true); setStatus(e.message || '保存失败') })
