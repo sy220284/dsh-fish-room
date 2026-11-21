@@ -301,22 +301,40 @@ export function apply(ctx, config) {
     async function ensureRoomAgent() {
         if (roomHandle) return roomHandle
         if (roomPromise) return roomPromise
-        const sid = `agent-room-${cfg.room}-${instanceId}`
+        // 会话 id 只用房间名派生 → 引擎重启后仍是同一条对话
+        const sid = `agent-room-${cfg.room}`
         roomPromise = (async () => {
+            const route = resolveRoute()
+            const opts = {
+                meta: { cwd: cfg.cwd || process.cwd() },
+                ...(route ? { agentOptions: route } : {}),
+            }
             try {
-                const route = resolveRoute()
-                const created = await ctx.agents.create({
-                    sessionId: sid,
-                    meta: { cwd: cfg.cwd || process.cwd() },
-                    ...(route ? { agentOptions: route } : {}),
-                })
+                const created = await ctx.agents.create({ sessionId: sid, ...opts })
                 roomHandle = created
                 log(`房间会话已开：${sid}`)
                 return created
             } catch (e) {
-                roomPromise = null
-                log('房间会话开不起来，先不接话：', e?.message || e)
-                return null
+                // 已存在 → 恢复这条对话（带着上次的上下文）
+                try {
+                    const resumed = await ctx.agents.resume({ resumeSessionId: sid, ...opts })
+                    roomHandle = resumed
+                    log(`房间会话已恢复（接着上次聊）：${sid}`)
+                    return resumed
+                } catch (e2) {
+                    // 兜底：换个 id 另起一条
+                    const alt = `${sid}-${instanceId.slice(0, 8)}`
+                    try {
+                        const created = await ctx.agents.create({ sessionId: alt, ...opts })
+                        roomHandle = created
+                        log(`房间会话另起新档：${alt}`)
+                        return created
+                    } catch (e3) {
+                        roomPromise = null
+                        log('房间会话开不起来，先不接话：', e3?.message || e3)
+                        return null
+                    }
+                }
             }
         })()
         try {
