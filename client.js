@@ -115,6 +115,29 @@ window.__ModuleLoader__.load({
     }
 
     // ── 聊天工作区：两个入口共用 /fish-room/ui.css 的视觉系统 ──
+    // 全部操作图标使用相同的线宽与 20px 绘制框，避免操作栏混用字符与 emoji。
+    function UiGlyph(props) {
+      var base = { width: 17, height: 17, viewBox: '0 0 24 24', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }
+      if (props.name === 'search') return h('svg', base,
+        h('circle', { cx: 10.8, cy: 10.8, r: 6.2 }),
+        h('path', { d: 'm16 16 4.8 4.8' }))
+      if (props.name === 'refresh') return h('svg', base,
+        h('path', { d: 'M20 11a8 8 0 0 0-14.9-3.5L3.5 10' }),
+        h('path', { d: 'M3.5 4.5V10H9' }),
+        h('path', { d: 'M4 13a8 8 0 0 0 14.9 3.5L20.5 14' }),
+        h('path', { d: 'M15 14h5.5v5.5' }))
+      if (props.name === 'export') return h('svg', base,
+        h('path', { d: 'M12 3v12' }),
+        h('path', { d: 'm7.5 10.5 4.5 4.5 4.5-4.5' }),
+        h('path', { d: 'M4 16v4h16v-4' }))
+      return h('svg', base,
+        h('path', { d: 'M4 6h16M4 12h16M4 18h16' }),
+        h('circle', { cx: 9, cy: 6, r: 2, fill: 'var(--fr-rail)' }),
+        h('circle', { cx: 15, cy: 12, r: 2, fill: 'var(--fr-rail)' }),
+        h('circle', { cx: 10, cy: 18, r: 2, fill: 'var(--fr-rail)' }))
+    }
+
     function ChatPanel() {
       var state = useState({ ok: false, rooms: [], messages: [], members: [], me: { id: '' } })
       var data = state[0], setData = state[1]
@@ -338,10 +361,10 @@ window.__ModuleLoader__.load({
               h('div', { className: 'fr-subtitle' }, online.length + ' 人在线 · ' + (members.length || 0) + ' 位成员 · 人设：' + (cfg.personaLabel || '跟随智能体'))
             ),
             h('div', { className: 'fr-head-actions' },
-              h('button', { type: 'button', className: 'fr-icon-button' + (searchOpen ? ' is-active' : ''), onClick: function () { if (searchOpen) closeSearch(); else setSearchOpen(true) }, title: '搜索聊天记录', 'aria-label': '搜索聊天记录' }, '⌕'),
-              h('button', { type: 'button', className: 'fr-icon-button fr-refresh', onClick: reload, title: '刷新消息', 'aria-label': '刷新消息' }, '↻'),
-              h('button', { type: 'button', className: 'fr-text-button', onClick: function () { window.open('/fish-room/export?room=' + encodeURIComponent(room) + '&fmt=md', '_blank', 'noopener') }, title: '导出当前房间聊天记录' }, '导出记录'),
-              h('button', { type: 'button', className: 'fr-text-button fr-settings-entry', onClick: function () { setSettingsOpen(true) }, title: '打开房间设置' }, h('span', { 'aria-hidden': true }, '⚙'), '房间设置')
+              h('button', { type: 'button', className: 'fr-icon-button' + (searchOpen ? ' is-active' : ''), onClick: function () { if (searchOpen) closeSearch(); else setSearchOpen(true) }, title: '搜索聊天记录', 'aria-label': '搜索聊天记录' }, h(UiGlyph, { name: 'search' })),
+              h('button', { type: 'button', className: 'fr-icon-button fr-refresh', onClick: reload, title: '刷新消息', 'aria-label': '刷新消息' }, h(UiGlyph, { name: 'refresh' })),
+              h('button', { type: 'button', className: 'fr-text-button', onClick: function () { window.open('/fish-room/export?room=' + encodeURIComponent(room) + '&fmt=md', '_blank', 'noopener') }, title: '导出当前房间聊天记录' }, h(UiGlyph, { name: 'export' }), '导出记录'),
+              h('button', { type: 'button', className: 'fr-text-button fr-settings-entry', onClick: function () { setSettingsOpen(true) }, title: '打开房间设置' }, h(UiGlyph, { name: 'settings' }), '房间设置')
             )
           ),
           searchOpen ? h('form', { className: 'fr-search', onSubmit: function (e) { e.preventDefault(); doSearch() } },
