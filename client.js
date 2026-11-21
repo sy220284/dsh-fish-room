@@ -18,75 +18,6 @@ window.__ModuleLoader__.load({
 
     var PANEL_ID = 'fish-room'
 
-    var C = {
-      card: 'var(--dsw-alias-bg-primary, #1b1d22)',
-      card2: 'var(--dsw-alias-bg-secondary, #23262c)',
-      line: 'var(--dsw-alias-border-l2, rgba(128,128,128,0.28))',
-      fg: 'var(--dsw-alias-text-primary, #e9e9ec)',
-      sub: 'var(--dsw-alias-text-secondary, #9a9aa2)',
-      accent: 'var(--dsw-alias-accent, #4a7dff)',
-      mine: 'var(--dsw-alias-accent-soft, #2b3550)',
-      agent: 'var(--dsw-alias-accent-softer, #2a2440)',
-    }
-
-    var s = {
-      card: {
-        maxWidth: 860, margin: '0 auto', padding: '18px 20px 22px', display: 'flex',
-        flexDirection: 'column', gap: 12, fontSize: 13.5, lineHeight: 1.65, color: C.fg,
-      },
-      head: { display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' },
-      title: { fontSize: 17, fontWeight: 650 },
-      chip: {
-        fontSize: 11.5, color: C.sub, background: C.card2, border: '1px solid ' + C.line,
-        borderRadius: 999, padding: '2px 9px',
-      },
-      dot: { width: 8, height: 8, borderRadius: 999, background: '#666' },
-      dotOn: { width: 8, height: 8, borderRadius: 999, background: '#3ddc84' },
-      tab: {
-        whiteSpace: 'nowrap', border: '1px solid ' + C.line, background: C.card2, color: C.sub,
-        borderRadius: 999, padding: '4px 12px', fontSize: 12, cursor: 'pointer',
-      },
-      tabOn: { borderColor: C.accent, color: C.fg },
-      list: {
-        display: 'flex', flexDirection: 'column', gap: 9, minHeight: 200, maxHeight: '50vh',
-        overflowY: 'auto', padding: '4px 2px',
-      },
-      msg: {
-        maxWidth: '78%', borderRadius: 13, padding: '8px 12px', background: C.card2,
-        border: '1px solid ' + C.line, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-      },
-      msgMine: {
-        maxWidth: '78%', borderRadius: 13, padding: '8px 12px', background: C.mine,
-        border: '1px solid ' + C.line, whiteSpace: 'pre-wrap', wordBreak: 'break-word', alignSelf: 'flex-end',
-      },
-      msgAgent: { borderColor: 'rgba(122,92,255,0.55)' },
-      msgGuest: { borderStyle: 'dashed' },
-      who: { fontSize: 11, color: C.sub, marginBottom: 3 },
-      time: { fontSize: 10.5, color: C.sub, marginTop: 4, textAlign: 'right' },
-      input: {
-        flex: 1, minHeight: 44, maxHeight: 150, resize: 'none', padding: '11px 12px', borderRadius: 12,
-        border: '1px solid ' + C.line, background: C.card2, color: C.fg, font: 'inherit', lineHeight: 1.5,
-      },
-      btn: {
-        padding: '10px 18px', borderRadius: 12, border: '1px solid ' + C.accent,
-        background: C.accent, color: '#fff', fontSize: 13.5, cursor: 'pointer',
-      },
-      ghost: {
-        padding: '6px 12px', borderRadius: 9, border: '1px solid ' + C.line,
-        background: 'transparent', color: C.sub, fontSize: 12, cursor: 'pointer',
-      },
-      field: {
-        width: '100%', padding: '9px 11px', borderRadius: 10, border: '1px solid ' + C.line,
-        background: C.card2, color: C.fg, font: 'inherit',
-      },
-      label: { fontSize: 12, color: C.sub, margin: '11px 0 5px' },
-      hint: { fontSize: 11.5, color: C.sub, opacity: 0.85 },
-      err: { fontSize: 12, color: '#e55' },
-      ok: { fontSize: 12, color: '#4ad07a' },
-      media: { marginTop: 6, fontSize: 12 },
-      img: { maxWidth: 220, borderRadius: 8, display: 'block', marginTop: 6 },
-    }
-
     function fmtTime(ts) {
       var d = new Date(ts || Date.now())
       return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
@@ -130,15 +61,15 @@ window.__ModuleLoader__.load({
         var src = x.url || (x.data ? 'data:' + (x.type || 'application/octet-stream') + ';base64,' + x.data : '')
         if (!src) return null
         if ((x.type || '').indexOf('image/') === 0) {
-          return h('img', { key: i, src: src, style: s.img, alt: x.name || 'image' })
+          return h('img', { key: i, src: src, className: 'fr-media-image', loading: 'lazy', alt: x.name || '图片附件' })
         }
         if ((x.type || '').indexOf('audio/') === 0) {
-          return h('div', { key: i, style: s.media },
+          return h('div', { key: i, className: 'fr-media-row' },
             h('audio', { controls: true, src: src }),
-            h('a', { href: src, target: '_blank', rel: 'noopener noreferrer', style: { marginLeft: 8, color: C.accent } }, x.name || '语音'))
+            h('a', { href: src, target: '_blank', rel: 'noopener noreferrer', className: 'fr-media-link' }, x.name || '语音'))
         }
-        return h('div', { key: i, style: s.media },
-          h('a', { href: src, target: '_blank', rel: 'noopener noreferrer', style: { color: C.accent } }, '📎 ' + (x.name || '文件')))
+        return h('div', { key: i, className: 'fr-media-row' },
+          h('a', { href: src, target: '_blank', rel: 'noopener noreferrer', className: 'fr-media-link' }, '📎 ' + (x.name || '文件')))
       })
     }
 
