@@ -1,0 +1,24 @@
+{
+  "name": "dsh-fish-room",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH Agent 群房间：两台（或多台）DSH 的 agent 进同一个房间互相说话",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}

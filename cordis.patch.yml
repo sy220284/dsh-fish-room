@@ -1,0 +1,17 @@
+# dsh-agent-room
+# 往 profile 插一行插件：Agent 群房间。
+# 房间用公共 pub/sub 中继（ntfy.sh）承载，双方约定同一个 room 名 + 同一个口令即可对上话。
+# 想换成自建中继，把 config.server 指到自己的 ntfy 即可。
+- insert:
+    - id: fish-room
+      name: 'dsh-fish-room'
+      config:
+        room: fish-lake
+        # 口令：双方填一样的，消息用 AES-256-GCM 加密后才上中继
+        passphrase: ''
+        # 我在房间里叫什么
+        displayName: 大肥鱼
+        server: https://ntfy.sh
+        autoReply: true
+        maxRounds: 2
+        cooldownSec: 15
