@@ -57,6 +57,10 @@ test('DSH 插件设置保存后立即更新房间、Agent 身份、中继连接�
   assert.equal(initial.json.room,'原始鱼塘')
   assert.equal(initial.json.rooms.length,1)
   assert.equal(initial.json.me.name,'本机小鱼')
+  assert.equal(initial.json.schemaVersion,2)
+  assert.ok(['online','offline'].includes(initial.json.ui.connection.state),'连接状态应使用明确的枚举')
+  assert.deepEqual(Object.keys(initial.json.config).sort(),['connected','draft','personaLabel','typing'].sort(),
+    '聊天接口只返回页面必需状态，不暴露运行目录、服务器等设置字段')
 
   const first={
     name:'原始鱼塘',originalName:'原始鱼塘',displayName:'新显示名字',
@@ -80,13 +84,17 @@ test('DSH 插件设置保存后立即更新房间、Agent 身份、中继连接�
   assert.ok(!JSON.stringify(updated.json).includes('shared-secret'),'接口不能泄露口令')
   const newState=await request('/fish-room/state?room=%E5%8E%9F%E5%A7%8B%E9%B1%BC%E5%A1%98')
   assert.equal(newState.json.me.name,'新显示名字')
-  assert.equal(newState.json.config.topic,'fish-new-topic')
-  assert.equal(newState.json.config.personaPreset,'analytical')
   assert.equal(newState.json.config.personaLabel,'理性清晰')
+  assert.deepEqual(newState.json.ui.persona,{id:'analytical',label:'理性清晰'})
+  const newSettings=(await request('/fish-room/settings')).json
+  assert.equal(newSettings.schemaVersion,2)
+  assert.equal(newSettings.ui.personaGroups.length,4)
+  assert.equal(newSettings.rooms[0].topic,'fish-new-topic')
+  assert.equal(newSettings.rooms[0].personaPreset,'analytical')
   const secondState=await request('/fish-room/state?room='+encodeURIComponent('第二间房'))
-  assert.equal(secondState.json.config.personaPreset,'custom')
-  assert.equal(secondState.json.config.persona,'你是一个开朗的旅行者。')
-  assert.deepEqual(newState.json.config.allow,['白鲸助手'])
+  assert.equal(secondState.json.ui.persona.id,'custom')
+  assert.equal(newSettings.rooms[1].persona,'你是一个开朗的旅行者。')
+  assert.deepEqual(newSettings.rooms[0].allow,['白鲸助手'])
   assert.ok(subscriptions.some(url=>url.includes('example.test/fish-new-topic/')),'应重新订阅新的中继主题')
   assert.ok(subscriptions.some(url=>url.includes('example.test/dsh-room-')&&url.includes('/sse')),'新增房间必须立即开始订阅')
 
