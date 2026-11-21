@@ -41,6 +41,18 @@ jobs:
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
         run: node tests/chat-visual.mjs
+      - name: 最终视觉复查取样
+        if: always()
+        run: |
+          for view in embedded-desktop-chat embedded-mobile-chat embedded-mobile-settings embedded-mobile-persona-thunder embedded-mobile-search-empty embedded-mobile-send-error dsh-settings-section-thunder; do
+            file="screenshots/${view}.png"
+            if [ -f "$file" ]; then
+              echo "SNAPSHOT_BEGIN:${view}"
+              base64 -w 256 "$file"
+              echo
+              echo "SNAPSHOT_END:${view}"
+            fi
+          done
       - name: 上传界面截图
         uses: actions/upload-artifact@v4
         if: always()
