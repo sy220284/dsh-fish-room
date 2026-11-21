@@ -315,13 +315,21 @@ export function apply(ctx, config) {
                 log(`房间会话已开：${sid}`)
                 return created
             } catch (e) {
-                // 已存在 → 恢复这条对话（带着上次的上下文）
+                // 已存在 → 先把同 id 的活 agent 收掉，再恢复这条对话（带着上次的上下文）
+                try {
+                    const live = ctx.agents.get?.(sid)
+                    if (live && typeof live.dispose === 'function') {
+                        log('同 id 的旧 agent 还在，先收掉再恢复')
+                        await live.dispose()
+                    }
+                } catch (e) { /* ignore */ }
                 try {
                     const resumed = await ctx.agents.resume({ resumeSessionId: sid, ...opts })
                     roomHandle = resumed
                     log(`房间会话已恢复（接着上次聊）：${sid}`)
                     return resumed
                 } catch (e2) {
+                    log('恢复房间会话失败，另起新档：', e2?.message || e2)
                     // 兜底：换个 id 另起一条
                     const alt = `${sid}-${instanceId.slice(0, 8)}`
                     try {
