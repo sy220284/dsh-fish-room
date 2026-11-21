@@ -4,14 +4,14 @@ on:
     paths:
       - 'client.js'
       - 'index.js'
-      - 'tests/chat-ui.test.mjs'
+      - 'tests/**'
       - '.github/workflows/chat-ui.yml'
   push:
     branches: [main]
     paths:
       - 'client.js'
       - 'index.js'
-      - 'tests/chat-ui.test.mjs'
+      - 'tests/**'
       - '.github/workflows/chat-ui.yml'
 jobs:
   chat-ui:
@@ -28,3 +28,17 @@ jobs:
           node --check client.js
       - name: 验证聊天页面交互
         run: node --test tests/chat-ui.test.mjs
+      - uses: browser-actions/setup-chrome@v2
+      - name: 安装浏览器测试依赖
+        run: npm install --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+      - name: 验证桌面及手机实际布局
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
+        run: node tests/chat-visual.mjs
+      - name: 上传界面截图
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fish-room-chat-screenshots
+          path: screenshots/*.png
+          if-no-files-found: ignore
