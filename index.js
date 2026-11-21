@@ -41,7 +41,8 @@ const ROOM_DEFAULTS = {
     passphrase: '', // 共享口令（加密密钥 + 准入）
     displayName: '', // 我在房间里叫什么
     persona: '', // 房间人格
-    server: 'https://ntfy.sh', // 中继
+    server: 'https://ntfy.sh', // 中继地址
+    transport: 'ntfy', // 'ntfy' 公共中继 | 'http' 自建/自选中继（与 IM 无关，任意通道都能进）
     topic: '', // 中继 topic；留空 = dsh-room-<name>
     allow: [], // 白名单（名字）；空 = 不限
     deny: [], // 黑名单（名字）
@@ -121,6 +122,7 @@ function normalizeRooms(config, fileCfg) {
             allow: Array.isArray(r.allow) ? r.allow.map(String) : [],
             deny: Array.isArray(r.deny) ? r.deny.map(String) : [],
             topic: r.topic || `dsh-room-${r.name}`,
+            transport: r.transport === 'http' ? 'http' : 'ntfy',
             cwd: r.cwd || HOME, // 默认 DSH_HOME → agent 能读到 ~/.dsh/AGENTS.md
         }))
 }
@@ -334,12 +336,22 @@ export function apply(ctx, config) {
     // ── 中继收发 ───────────────────────────────────────────
     async function publish(st, msg) {
         if (stopped) return false
-        const body = encrypt(st, {
+        const cipher = encrypt(st, {
             v: 2, room: st.cfg.name, from: st.instanceId, fromName: st.cfg.displayName || 'agent',
             ts: Date.now(), ...msg,
         })
-        const res = await fetch(`${st.cfg.server}/${st.cfg.topic}`, {
-            method: 'POST', headers: { 'Content-Type': 'text/plain' }, body,
+        const url = `${st.cfg.server}/${st.cfg.topic}`
+        if (st.cfg.transport === 'http') {
+            // 自建中继：POST JSON {payload}；订阅 GET /<topic>/stream（SSE，data 里是 {payload}）
+            const res = await fetch(url, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ payload: cipher, ts: Date.now() }),
+            })
+            if (!res.ok) throw new Error(`中继返回 ${res.status}`)
+            return true
+        }
+        const res = await fetch(url, {
+            method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: cipher,
         })
         if (!res.ok) throw new Error(`中继返回 ${res.status}`)
         return true
@@ -347,6 +359,10 @@ export function apply(ctx, config) {
 
     /** 上传媒体到中继（ntfy 附件），返回 {url,name,type,size} */
     async function uploadMedia(st, bytes, name, type) {
+        if (st.cfg.transport === 'http') {
+            // 自建中继没有附件接口：直接把 base64 塞进密文（体积有限，适合小图/语音条）
+            return { url: '', name: name || 'file.bin', type: type || '', size: bytes.length, data: bytes.toString('base64') }
+        }
         const res = await fetch(`${st.cfg.server}/${st.cfg.topic}`, {
             method: 'POST',
             headers: { 'Content-Type': type || 'application/octet-stream', Filename: name || 'file.bin' },
@@ -415,7 +431,8 @@ export function apply(ctx, config) {
         while (!stopped && st.gen === myGen) {
             try {
                 const since = st.cursor.id ? `&since=${encodeURIComponent(st.cursor.id)}` : '&since=all'
-                const res = await fetch(`${st.cfg.server}/${st.cfg.topic}/sse?since=${since}`, {
+                const streamPath = st.cfg.transport === 'http' ? '/stream' : '/sse'
+                const res = await fetch(`${st.cfg.server}/${st.cfg.topic}${streamPath}?since=${since}`, {
                     headers: { Accept: 'text/event-stream' },
                 })
                 if (!res.ok || !res.body) throw new Error(`订阅返回 ${res.status}`)
@@ -439,7 +456,9 @@ export function apply(ctx, config) {
                         let payload
                         try { payload = JSON.parse(line.slice(5).trim()) } catch { continue }
                         if (!payload || payload.event === 'open' || payload.event === 'keepalive') continue
-                        const plain = decrypt(st, payload.message)
+                        const cipherText = payload.payload ?? payload.message
+                        if (!cipherText) continue
+                        const plain = decrypt(st, cipherText)
                         if (!plain) continue
                         void handleMessage(st, plain, payload.id || plain.ts, payload.file || null)
                     }
@@ -482,7 +501,15 @@ export function apply(ctx, config) {
         if (Array.isArray(msg.media)) {
             for (const m of msg.media) {
                 const item = { ...m }
-                if (m.url && !m.local) {
+                if (m.data && !m.local) {
+                    try {
+                        mkdirSync(MEDIA_DIR, { recursive: true })
+                        const safe = String(m.name || 'file.bin').replace(/[^\w.\-]/g, '_')
+                        const p = join(MEDIA_DIR, `${Date.now()}-${safe}`)
+                        writeFileSync(p, Buffer.from(String(m.data), 'base64'))
+                        item.local = p
+                    } catch { /* ignore */ }
+                } else if (m.url && !m.local) {
                     const saved = await downloadMedia(st, m.url, m.name)
                     if (saved) item.local = saved.local
                 }
@@ -894,6 +921,7 @@ export function apply(ctx, config) {
             draft: st.draft,
             persona: st.cfg.persona,
             server: st.cfg.server,
+            transport: st.cfg.transport || 'ntfy',
             autoReply: !!st.cfg.autoReply,
             maxRounds: Number(st.cfg.maxRounds ?? 2),
             cooldownSec: Number(st.cfg.cooldownSec ?? 15),

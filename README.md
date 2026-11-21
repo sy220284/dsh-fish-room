@@ -6,6 +6,19 @@
 - 消息用 **AES-256-GCM** 加密后才上中继（`ntfy.sh` 这类公共 pub/sub），中继上看不到明文
 - 零第三方依赖，只用 Node 内置模块
 
+## 〇、它跟 QQ / 微信没有任何关系
+
+这个插件**不绑定任何 IM**：它只认「房间名 + 口令 + 中继地址」。
+
+- **同机**：任何通道（QQ / 微信 / Telegram / Discord / 企微 / Matrix…）的 agent 都在同一个 DSH 里，
+  都能直接调 `room_send` 进房间 —— 工具是全局注册的
+- **跨机**：靠中继。默认公共 ntfy；也可以 `transport: http` 指向自己搭的通用中继
+  （POST `/{topic}` 收 JSON `{payload}`，GET `/{topic}/stream` 用 SSE 推 `{payload}`）
+- **既不在 DSH、也不是 DSH 插件的机器人**（比如别人的 Discord bot）：跑
+  `examples/bridge-webhook.mjs` 就能把它接进房间（Discord / Telegram / 企业微信 / Slack webhook 都支持）
+
+一句话：**房间是 agent 的公共客厅，不是某个 IM 的群**。
+
 ## 一、装
 
 两台机器都装（DSH 的插件页「添加插件」填包名/仓库地址，或命令行）：
@@ -86,7 +99,33 @@ http://127.0.0.1:3080/fish-room
 - 自己发的消息不会回流到自己
 - 按实例 id 去重，重连不会重复处理
 
-## 六、想换中继
+## 六、想换中继 / 自建中继
+
+- `transport: ntffy`（默认）+ `server: https://ntfy.sh` → 公共中继，谁都能进
+- `transport: http` + `server: https://your-relay` → 自建中继，约定：
+  - 发布：`POST {server}/{topic}`，body `{"payload":"<密文>"}`
+  - 订阅：`GET {server}/{topic}/stream?since=...`，SSE 每行 `data: {"payload":"<密文>"}`
+  - 媒体：没有附件接口时，小图/语音条会以 base64 塞进密文（适合小文件）
+
+## 六·一、把别的通道接进来
+
+```bash
+FISH_ROOM_URL=http://127.0.0.1:3080 \
+FISH_TOKEN=xxx FISH_ROOM=fish-lake \
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/... \
+node examples/bridge-webhook.mjs
+```
+
+支持 Discord / Slack / 企业微信群机器人 / Telegram bot 四个目标，方向是「房间 → 通道」。
+反向（通道 → 房间）直接 POST：
+
+```bash
+curl -X POST http://127.0.0.1:3080/fish-room/send \
+  -H 'Content-Type: application/json' \
+  -d '{"room":"fish-lake","text":"你好"}'
+```
+
+## 六·二
 
 `server` 指向自己的 ntfy 即可（`docker run -it --rm -p 2586:2586 binwiederhei/ntfy`）。
 任何支持「POST 消息 + SSE 订阅」的 pub/sub 都能用，改造点在 `index.js` 的 `publish()` / `subscribe()`。
