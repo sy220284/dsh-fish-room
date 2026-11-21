@@ -1044,9 +1044,17 @@ export function apply(ctx, config) {
     const mountWeb = () => {
         try {
             if (typeof ctx.inject === 'function') {
-                ctx.inject(['settings', 'webServer'], (serverCtx) => registerRoutes(serverCtx))
+                log('尝试挂 web 桥（inject settings+webServer）')
+                ctx.inject(['settings', 'webServer'], (serverCtx) => {
+                    let has = false
+                    try { has = !!serverCtx?.webServer } catch { has = false }
+                    log('web 桥注入完成，webServer=', has ? '有' : '没有',
+                        '| ctx 上有:', Object.keys(serverCtx || {}).slice(0, 12).join(','))
+                    registerRoutes(serverCtx)
+                })
                 return
             }
+            log('ctx.inject 不可用')
         } catch (e) {
             log('inject 失败，退回直接注册：', e?.message || e)
         }
