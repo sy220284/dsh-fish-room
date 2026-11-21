@@ -79,6 +79,10 @@ const server=createServer(async(req,res)=>{
     const chunks=[]
     for await(const chunk of req)chunks.push(chunk)
     const data=JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    if(data.text==='模拟发送失败'){
+      res.writeHead(503,{'Content-Type':'application/json'})
+      res.end('{"ok":false,"error":"中继暂时不可用，请重试"}');return
+    }
     messages.push({id:String(messages.length+1),from:'self',fromName:'我',kind:'human',ts:Date.now(),text:data.text})
     res.setHeader('Content-Type','application/json');res.end('{"ok":true}');return
   }
@@ -178,6 +182,25 @@ try {
       assert.ok(metrics.subtitle.bottom<metrics.actionBar.top,name+' 文字和操作按钮应分行显示，避免标题被挤压')
       assert.ok(metrics.actionBar.right<=width+1,name+' 右侧操作区必须在手机屏幕内')
     }
+    if(name==='embedded-mobile'){
+      await page.getByRole('button',{name:'搜索聊天记录'}).click()
+      await page.getByRole('searchbox',{name:'搜索消息'}).fill('不存在的检索条件')
+      await page.locator('.fr-search-submit').click()
+      await page.getByText('没有找到相关消息').waitFor()
+      await page.screenshot({path:'screenshots/embedded-mobile-search-empty.png',fullPage:false})
+      await page.locator('.fr-close-search').click()
+      await page.getByRole('button',{name:'查看'}).click()
+      await page.locator('.fr-members-open').waitFor()
+      await page.screenshot({path:'screenshots/embedded-mobile-members-expanded.png',fullPage:false})
+      await page.getByRole('button',{name:'收起'}).click()
+      await page.getByRole('textbox',{name:'输入聊天消息'}).fill('模拟发送失败')
+      await page.locator('.fr-send').click()
+      await page.getByText('中继暂时不可用，请重试').waitFor()
+      assert.equal(await page.getByRole('textbox',{name:'输入聊天消息'}).inputValue(),'模拟发送失败',
+        '发送失败必须保留草稿')
+      await page.screenshot({path:'screenshots/embedded-mobile-send-error.png',fullPage:false})
+      await page.getByRole('textbox',{name:'输入聊天消息'}).fill('')
+    }
     await page.getByRole('button',{name:'房间设置'}).click()
     await page.locator('.fr-settings-overlay .fr-settings').waitFor()
     await page.locator('.fr-settings-overlay .fr-settings-card').first().waitFor()
@@ -243,6 +266,8 @@ try {
   await mountDsh(settingsPage,'settings.section')
   await settingsPage.getByRole('heading',{name:'鱼房间设置'}).waitFor()
   assert.equal(await settingsPage.locator('.fr-settings-card').count(),5,'DSH 原设置分区应展示完整的设置结构')
+  assert.equal(await settingsPage.locator('.fr-settings-jump-button').count(),5,
+    '所有设置章节必须可直接定位')
   assert.equal(await settingsPage.locator('.fr-persona-choice').count(),1,'设置分区应自动定位已保存的自定义人设')
   await settingsPage.getByRole('tab',{name:/常用/}).click()
   assert.equal(await settingsPage.locator('.fr-persona-choice').count(),7,'DSH 设置分区常用人设应有 7 款')
@@ -250,8 +275,23 @@ try {
   assert.equal(await settingsPage.locator('.fr-persona-choice').count(),3,'DSH 设置分区应包含贴吧风格')
   await settingsPage.getByRole('tab',{name:/雷霆/}).click()
   assert.equal(await settingsPage.locator('.fr-persona-choice').count(),8,'DSH 设置分区应包含全部雷霆风格')
+  await settingsPage.locator('input[type="radio"][value="thunder_riddle"]').check()
+  assert.match(await settingsPage.locator('.fr-persona-preview').textContent(),/语气预览/,
+    '选中人设后应展示来自接口的单独示例')
   await settingsPage.screenshot({path:'screenshots/dsh-settings-section-thunder.png',fullPage:true})
   await settingsPage.screenshot({path:'screenshots/dsh-settings-section.png',fullPage:true})
+  await settingsPage.getByRole('button',{name:/成员与权限/}).click()
+  assert.equal(await settingsPage.locator('[data-room-section="4"]').getAttribute('open'),'',
+    '点击章节快捷导航应自动展开折叠设置')
+  await settingsPage.screenshot({path:'screenshots/dsh-settings-member-permissions.png',fullPage:false})
+  await settingsPage.getByRole('tab',{name:/协作试验/}).click()
+  await settingsPage.locator('#fish-setting-1-displayName').fill('房间二专属昵称')
+  await settingsPage.locator('.fr-settings-submit').click()
+  await settingsPage.getByText('配置已保存并应用，连接状态会在页面中更新').waitFor()
+  assert.equal(await settingsPage.getByRole('tab',{name:/协作试验/}).getAttribute('aria-selected'),'true',
+    '保存第二个房间设置后应保持当前选中房间')
+  assert.equal(await settingsPage.locator('#fish-setting-1-displayName').inputValue(),'房间二专属昵称')
+  await settingsPage.screenshot({path:'screenshots/dsh-settings-second-room-saved.png',fullPage:false})
   await settingsPage.close()
 } finally {
   await browser.close()
