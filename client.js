@@ -443,6 +443,7 @@ window.__ModuleLoader__.load({
             if (index !== i) return r
             var next = Object.assign({}, r)
             next[key] = value
+            if (key === 'name' && r.topic === 'dsh-room-' + r.name) next.topic = 'dsh-room-' + String(value).trim()
             return next
           })
         })
