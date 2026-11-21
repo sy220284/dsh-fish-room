@@ -1,0 +1,30 @@
+name: 聊天界面回归检查
+on:
+  pull_request:
+    paths:
+      - 'client.js'
+      - 'index.js'
+      - 'tests/chat-ui.test.mjs'
+      - '.github/workflows/chat-ui.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client.js'
+      - 'index.js'
+      - 'tests/chat-ui.test.mjs'
+      - '.github/workflows/chat-ui.yml'
+jobs:
+  chat-ui:
+    name: 页面语法与操作回归
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: 检查脚本语法
+        run: |
+          node --check index.js
+          node --check client.js
+      - name: 验证聊天页面交互
+        run: node --test tests/chat-ui.test.mjs
