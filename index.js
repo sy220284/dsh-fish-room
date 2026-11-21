@@ -1071,7 +1071,8 @@ export function apply(ctx, config) {
             })
             const problem = validateSettings(merged)
             if (problem) { writeJson(res, 400, { error: problem }); return }
-            const next = normalizeRooms({ rooms: merged }, {})
+            const savedFields = Object.keys(ROOM_DEFAULTS)
+            const next = normalizeRooms({ rooms: merged.map(r => Object.fromEntries(savedFields.filter(k => Object.prototype.hasOwnProperty.call(r, k)).map(k => [k, r[k]]))) }, {})
             try {
                 mkdirSync(DATA_DIR, { recursive: true })
                 writeFileSync(ROOM_JSON, JSON.stringify({ rooms: next }, null, 2), 'utf8')
