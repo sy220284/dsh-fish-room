@@ -108,10 +108,14 @@ test('预置与自定义人设保存后进入真实 Agent 接话指令，并兼�
   }
   async function receive(text,index) {
     const count=prompts.length
+    const publications=outgoing.length
     streams[0].stream.feed(encrypted(text,index))
     const deadline=Date.now()+3000
     while(prompts.length===count&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10))
     assert.equal(prompts.length,count+1,'必须真正调用智能体，且调用一次')
+    while(outgoing.length===publications&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10))
+    assert.ok(outgoing.length>publications,'智能体接话应该发回中继')
+    await new Promise(resolve=>setImmediate(resolve))
     return prompts.at(-1)
   }
   const legacyPrompt=await receive('旧版设置试聊',1)
@@ -132,17 +136,35 @@ test('预置与自定义人设保存后进入真实 Agent 接话指令，并兼�
   assert.match(analytical,/理性、清醒、思路清晰/)
   assert.doesNotMatch(analytical,/旧版自定义：说话慢一点、语气沉稳/)
 
+  // 六个预置逐一触发真实 Agent，不只校验下拉选项存在。
+  const otherStyles=[
+    ['friendly','自然随和'],
+    ['caring','温柔体贴'],
+    ['playful','轻松幽默'],
+    ['concise','简洁干练'],
+    ['curious','好奇探索'],
+  ]
+  for (let i=0;i<otherStyles.length;i++){
+    const [id,label]=otherStyles[i]
+    const chosenStyle=await save({personaPreset:id})
+    assert.equal(chosenStyle.status,200)
+    assert.equal(chosenStyle.json.rooms[0].personaLabel,label)
+    const prompt=await receive('逐项验证 '+label,i+3)
+    assert.ok(prompt.includes('【当前聊天人设：'+label+'】'),'人设标签必须随选择变化')
+    assert.doesNotMatch(prompt,/旧版自定义：说话慢一点、语气沉稳/)
+  }
+
   const customText='你是一个见多识广但不卖弄学识的旅行者，说话简短，喜欢贴近生活的比喻。'
   const custom=await save({personaPreset:'custom',persona:customText})
   assert.equal(custom.status,200,JSON.stringify(custom.json))
-  const customPrompt=await receive('切换自定义后的试聊',3)
+  const customPrompt=await receive('切换自定义后的试聊',8)
   assert.match(customPrompt,/【当前聊天人设：自定义人设】/)
   assert.ok(customPrompt.includes(customText))
   assert.doesNotMatch(customPrompt,/理性、清醒、思路清晰/)
 
   const follow=await save({personaPreset:'follow'})
   assert.equal(follow.status,200)
-  const defaultPrompt=await receive('跟随智能体的试聊',4)
+  const defaultPrompt=await receive('跟随智能体的试聊',9)
   assert.doesNotMatch(defaultPrompt,/【当前聊天人设：/)
   assert.doesNotMatch(defaultPrompt,/见多识广但不卖弄学识/)
   assert.match(defaultPrompt,/群房间「角色讨论」/)
@@ -158,5 +180,5 @@ test('预置与自定义人设保存后进入真实 Agent 接话指令，并兼�
   const disk=JSON.parse(readFileSync(join(home,'plugins-data','fishroom','room.json'),'utf8'))
   assert.equal(disk.rooms[0].personaPreset,'follow')
   assert.equal(disk.rooms[0].persona,customText,'切换回预置后应保留自定义草稿')
-  assert.ok(outgoing.length>=4,'每次自动接话都应通过消息中继发布')
+  assert.ok(outgoing.length>=9,'每次自动接话都应通过消息中继发布')
 })
