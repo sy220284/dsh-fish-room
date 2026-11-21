@@ -165,16 +165,32 @@ try {
     await page.screenshot({path:'screenshots/'+name+'-chat.png',fullPage:true})
     const metrics=await page.evaluate(()=>({width:document.documentElement.scrollWidth,viewport:innerWidth,
       mainHeight:document.querySelector('.fr-message-area').getBoundingClientRect().height,
-      sendVisible:document.querySelector('.fr-send').getBoundingClientRect().height>0}))
+      sendVisible:document.querySelector('.fr-send').getBoundingClientRect().height>0,
+      heading:document.querySelector('.fr-chat-heading').getBoundingClientRect().toJSON(),
+      header:document.querySelector('.fr-chat-head').getBoundingClientRect().toJSON(),
+      actionBar:document.querySelector('.fr-head-actions').getBoundingClientRect().toJSON(),
+      subtitle:document.querySelector('.fr-subtitle').getBoundingClientRect().toJSON()}))
     assert.ok(metrics.width<=metrics.viewport+1,name+' 宿主页不应出现水平溢出 '+JSON.stringify(metrics))
     assert.ok(metrics.mainHeight>100&&metrics.sendVisible,name+' 消息区和发送控件必须可用')
+    if(width<=390){
+      assert.ok(metrics.heading.width>width*.72,name+' 聊天标题区域必须使用整行宽度 '+JSON.stringify(metrics))
+      assert.ok(metrics.subtitle.bottom<metrics.actionBar.top,name+' 文字和操作按钮应分行显示，避免标题被挤压')
+      assert.ok(metrics.actionBar.right<=width+1,name+' 右侧操作区必须在手机屏幕内')
+    }
     await page.getByRole('button',{name:'房间设置'}).click()
     await page.locator('.fr-settings-overlay .fr-settings').waitFor()
     await page.screenshot({path:'screenshots/'+name+'-settings.png',fullPage:true})
+    await page.screenshot({path:'screenshots/'+name+'-settings-viewport.png',fullPage:false})
     const settingsLayout=await page.evaluate(()=>({width:document.documentElement.scrollWidth,viewport:innerWidth,
-      saveVisible:document.querySelector('.fr-settings-savebar').getBoundingClientRect().height>0}))
+      saveVisible:document.querySelector('.fr-settings-savebar').getBoundingClientRect().height>0,
+      savebarHeight:document.querySelector('.fr-settings-savebar').getBoundingClientRect().height,
+      toolbarHeight:document.querySelector('.fr-settings-toolbar').getBoundingClientRect().height}))
     assert.ok(settingsLayout.width<=settingsLayout.viewport+1,name+' 设置不应产生水平溢出')
     assert.equal(settingsLayout.saveVisible,true,'保存操作应可用')
+    if(width<=390){
+      assert.ok(settingsLayout.toolbarHeight<=60,name+' 房间列表和添加按钮应处于紧凑单行 '+JSON.stringify(settingsLayout))
+      assert.ok(settingsLayout.savebarHeight<=85,name+' 保存操作栏不应遮挡过多表单空间 '+JSON.stringify(settingsLayout))
+    }
     await page.getByRole('tab',{name:/雷霆/}).click()
     assert.equal(await page.locator('.fr-persona-choice').count(),8,name+' 应完整展示雷霆分类')
     await page.screenshot({path:'screenshots/'+name+'-personas-thunder.png',fullPage:true})
