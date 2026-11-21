@@ -328,7 +328,7 @@ window.__ModuleLoader__.load({
                 h('h1', null, room || '鱼房间'),
                 h('span', { className: 'fr-status' + (isConnected ? ' is-on' : '') }, isConnected ? '已连接' : '未连接')
               ),
-              h('div', { className: 'fr-subtitle' }, online.length + ' 人在线 · ' + (members.length || 0) + ' 位成员')
+              h('div', { className: 'fr-subtitle' }, online.length + ' 人在线 · ' + (members.length || 0) + ' 位成员 · 人设：' + (cfg.personaLabel || '跟随智能体'))
             ),
             h('div', { className: 'fr-head-actions' },
               h('button', { type: 'button', className: 'fr-icon-button' + (searchOpen ? ' is-active' : ''), onClick: function () { if (searchOpen) closeSearch(); else setSearchOpen(true) }, title: '搜索聊天记录', 'aria-label': '搜索聊天记录' }, '⌕'),
@@ -416,6 +416,7 @@ window.__ModuleLoader__.load({
     function SettingsPanel(props) {
       props = props || {}
       var source = useState(null), rooms = source[0], setRooms = source[1]
+      var presetSource = useState([]), personaOptions = presetSource[0], setPersonaOptions = presetSource[1]
       var selectedState = useState(0), selected = selectedState[0], setSelected = selectedState[1]
       var statusState = useState(''), status = statusState[0], setStatus = statusState[1]
       var errorState = useState(false), isError = errorState[0], setIsError = errorState[1]
@@ -429,6 +430,8 @@ window.__ModuleLoader__.load({
         setStatus('')
         return api('/fish-room/settings', { cache: 'no-store' }).then(function (j) {
           if (!j || !j.ok) throw new Error((j && j.error) || '无法读取房间设置')
+          if (!Array.isArray(j.personas) || !j.personas.length) throw new Error('预置人设列表读取失败')
+          setPersonaOptions(Array.isArray(j.personas) ? j.personas : [])
           setRooms((j.rooms || []).map(function (r) { return Object.assign({}, r, { _originalName: r.name, _passphrase: '', _key: 'room-' + nextId.current++ }) }))
           setDirty(false)
           return j
@@ -472,7 +475,7 @@ window.__ModuleLoader__.load({
           while (used.has('新房间-' + n)) n++
           setSelected(prev.length)
           return prev.concat([{ name: '新房间-' + n, _key: 'new-' + nextId.current++, _passphrase: '',
-            _originalName: '', displayName: '', persona: '', server: 'https://ntfy.sh', transport: 'ntfy',
+            _originalName: '', displayName: '', persona: '', personaPreset: 'follow', server: 'https://ntfy.sh', transport: 'ntfy',
             topic: '', allow: [], deny: [], owner: '', autoReply: true, maxRounds: 2, cooldownSec: 15,
             turnTimeoutSec: 180, provider: '', model: '', cwd: '' }])
         })
@@ -502,6 +505,10 @@ window.__ModuleLoader__.load({
           if (r.maxRounds < 0 || r.maxRounds > 6 || !Number.isInteger(r.maxRounds)) return '最多来回轮次应在 0～6 之间'
           if (r.cooldownSec < 0 || r.cooldownSec > 300 || !Number.isInteger(r.cooldownSec)) return '接话冷却应在 0～300 秒之间'
           if (r.turnTimeoutSec < 15 || r.turnTimeoutSec > 600 || !Number.isInteger(r.turnTimeoutSec)) return '回答等待时间应在 15～600 秒之间'
+          var personaId = r.personaPreset || (String(r.persona || '').trim() ? 'custom' : 'follow')
+          if (!personaOptions.some(function (p) { return p.id === personaId })) return '请选择有效的聊天人设'
+          if (String(r.persona || '').length > 2000) return '自定义聊天人设最多填写 2000 字'
+          if (personaId === 'custom' && !String(r.persona || '').trim()) return '请先填写自定义聊天人设'
         }
         return ''
       }
@@ -526,7 +533,8 @@ window.__ModuleLoader__.load({
         api('/fish-room/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rooms: payload }) })
           .then(function (j) {
             if (!j || !j.ok) throw new Error((j && j.error) || '保存失败')
-            setRooms((j.rooms || []).map(function (r) { return Object.assign({}, r, { _originalName: r.name, _passphrase: '', _key: 'room-' + nextId.current++ }) }))
+            setPersonaOptions(Array.isArray(j.personas) ? j.personas : [])
+          setRooms((j.rooms || []).map(function (r) { return Object.assign({}, r, { _originalName: r.name, _passphrase: '', _key: 'room-' + nextId.current++ }) }))
             setDirty(false); setIsError(false); setShowPass(false)
             setStatus('配置已保存并应用，连接状态会在页面中更新')
           }).catch(function (e) { setIsError(true); setStatus(e.message || '保存失败') })
@@ -599,10 +607,43 @@ window.__ModuleLoader__.load({
                       h('input', { type: 'checkbox', role: 'switch', checked: !!r.autoReply,
                         onChange: function (e) { update(i, 'autoReply', e.target.checked) } })
                     ),
+                    h('div', { className: 'fr-persona' },
+                      h('div', { className: 'fr-persona-heading' },
+                        h('div', null,
+                          h('h4', { id: 'fish-persona-title' }, '聊天人设'),
+                          h('p', null, '为本机智能体选择聊天风格。每个房间独立设置，其他成员不受影响。')),
+                        h('span', { className: 'fr-persona-current' }, '当前选择 · ' +
+                          ((personaOptions.find(function (p) { return p.id === (r.personaPreset || (r.persona ? 'custom' : 'follow')) }) || {}).label || '跟随智能体'))
+                      ),
+                      h('fieldset', { className: 'fr-persona-choices', 'aria-labelledby': 'fish-persona-title' },
+                        personaOptions.map(function (p) {
+                          var active = (r.personaPreset || (r.persona ? 'custom' : 'follow')) === p.id
+                          return h('label', { key: p.id, className: 'fr-persona-choice' + (active ? ' is-selected' : '') },
+                            h('span', { className: 'fr-persona-choice-top' },
+                              h('input', { type: 'radio', name: 'fish-persona-' + r._key, value: p.id,
+                                checked: active, onChange: function () { update(i, 'personaPreset', p.id) } }),
+                              h('strong', null, p.label)),
+                            h('span', { className: 'fr-persona-desc' }, p.description),
+                            h('span', { className: 'fr-persona-example' }, '语气示例：' + p.example)
+                          )
+                        })
+                      ),
+                      (r.personaPreset || (r.persona ? 'custom' : 'follow')) === 'custom'
+                        ? h('div', { className: 'fr-persona-custom' },
+                          h('label', { htmlFor: 'fish-setting-' + i + '-persona' }, '自己编写人设'),
+                          h('textarea', { id: 'fish-setting-' + i + '-persona', rows: 5,
+                            maxLength: 2000, value: r.persona || '',
+                            placeholder: '例如：你是一位沉稳、有幽默感的聊天伙伴。说话自然，擅长倾听，偶尔提出有趣的问题。回复保持简洁，不要反复自我介绍。',
+                            onChange: function (e) { update(i, 'persona', e.target.value) } }),
+                          h('div', { className: 'fr-persona-custom-foot' },
+                            h('span', null, '保存后用于下一轮接话；切回自定义时仍可继续编辑先前填写的内容。'),
+                            h('span', { className: 'fr-persona-count' }, String((r.persona || '').length) + ' / 2000')
+                          )
+                        ) : null
+                    ),
                     h('div', { className: 'fr-settings-grid' },
                       textField(r, i, 'maxRounds', '最多来回轮次', '范围 0～6，限制连续对聊。', { type: 'number', min: 0, max: 6 }),
-                      textField(r, i, 'cooldownSec', '接话冷却（秒）', '范围 0～300，避免短时间连续接话。', { type: 'number', min: 0, max: 300 }),
-                      textField(r, i, 'persona', '房间聊天人格', '附加到本房间的 Agent 对话指令。', { full: true, multiline: true, rows: 3, placeholder: '例如：聊天友好、简短清楚。' })
+                      textField(r, i, 'cooldownSec', '接话冷却（秒）', '范围 0～300，避免短时间连续接话。', { type: 'number', min: 0, max: 300 })
                     )
                   ),
                   h('details', { className: 'fr-settings-card fr-settings-disclosure' },
