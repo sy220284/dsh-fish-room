@@ -48,6 +48,16 @@ test('夜潮工作区视觉基线及无障碍基础不应退化', () => {
   assert.ok(clientSource.includes("className: 'fr-settings-savebar'"), '设置保存操作不能丢失')
 })
 
+test('聊天室接口版本和视图契约应统一', () => {
+  assert.ok(clientSource.includes('schemaVersion !== 2'), '客户端对响应版本进行校验')
+  assert.ok(clientSource.includes('function chatView(response)'), '聊天视图具有统一的转换检查')
+  assert.ok(clientSource.includes('function settingsView(response)'), '设置响应具有统一的转换检查')
+  assert.ok(clientSource.includes('className: \'fr-settings-jump\''), '设置章节快捷导航存在')
+  assert.ok(clientSource.includes('className: \'fr-persona-preview\''), '选择预置时必须展示语气预览')
+  assert.ok(css.includes('.fr-settings-jump'), '导航有明确视觉样式')
+  assert.ok(css.includes('.fr-persona-preview'), '人设预览使用独立层级')
+})
+
 function harness() {
   const elements = new Map()
   class Element {
@@ -111,9 +121,13 @@ function harness() {
     const json = async () => {
       if(path.startsWith('/fish-room/state')) {
         const current = new URL('http://test'+path).searchParams.get('room') || 'fish-lake'
-        return {ok:true,room:current,rooms:configs,me:{id:'self',name:'我'},
+        return {ok:true,schemaVersion:2,room:current,
+          rooms:configs.map(r=>({name:r.name,connected:r.connected})),me:{id:'self',name:'我'},
           members:[{name:'对方',online:true}],messages:[...messages],
-          config:{connected:current==='fish-lake',typing:false}}
+          config:{connected:current==='fish-lake',typing:false,draft:'',personaLabel:'跟随智能体'},
+          ui:{connection:{state:current==='fish-lake'?'online':'offline',
+              label:current==='fish-lake'?'已连接':'连接中断',detail:'房间通讯正常'},
+            presence:{online:1,total:1},persona:{id:'follow',label:'跟随智能体'}}}
       }
       if(path.startsWith('/fish-room/history')) return {ok:true,total:1,messages:[messages[1]]}
       if(path==='/fish-room/media') return {ok:true,media:{type:'text/plain',name:'hello.txt',url:'https://example.test/hello.txt'}}
