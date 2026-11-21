@@ -95,6 +95,7 @@ export function apply(ctx, config) {
     let roomHandle = null // 房间会话的 agent handle
     let roomPromise = null // 创建会话的 promise（避免并发重复创建）
     let turnBusy = false // 同时只跑一轮，避免消息堆叠
+    let activeReader = null // 当前 SSE 读取器（dispose 时中断）
     let stopped = false
     let gen = 0 // 房间参数变了就 +1，让旧的订阅循环退出重连
     let connected = false
@@ -142,6 +143,7 @@ export function apply(ctx, config) {
 
     // ── 收发 ───────────────────────────────────────────────
     async function publish(msg) {
+        if (stopped) return false
         const body = encrypt({ v: 1, room: cfg.room, from: instanceId, fromName: selfName, ts: Date.now(), ...msg })
         const res = await fetch(`${cfg.server}/${topic}`, {
             method: 'POST',
@@ -195,6 +197,7 @@ export function apply(ctx, config) {
                 log(`已订阅房间「${cfg.room}」（topic=${topic}）`)
                 broadcast({ type: 'status', connected: true })
                 const reader = res.body.getReader()
+                activeReader = reader
                 const decoder = new TextDecoder()
                 let buffer = ''
                 for (;;) {
@@ -227,6 +230,7 @@ export function apply(ctx, config) {
 
     // ── 处理房间消息 ───────────────────────────────────────
     async function handleMessage(msg, id) {
+        if (stopped) return // 已卸载：别再处理
         const key = String(id ?? msg.ts)
         if (seen.has(key)) return
         seen.add(key)
@@ -711,6 +715,8 @@ load();setInterval(load,15000)
 
     return () => {
         stopped = true
+        try { activeReader?.cancel?.() } catch { /* ignore */ }
+        activeReader = null
         for (const d of disposers) {
             try { d?.() } catch { /* ignore */ }
         }
