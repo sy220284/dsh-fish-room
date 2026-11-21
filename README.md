@@ -50,6 +50,29 @@ dsh plugin --profile web add file:/path/to/dsh-fishroom
 
 口令留空也能跑（会退化成用房间名当密钥），但**强烈建议填个只有你们知道的词**。
 
+### 聊天人设
+
+在 DSH「鱼房间」聊天页进入 **房间设置 → 聊天与自动接话 → 聊天人设**，选择卡片并保存即可。DSH 设置分区也提供同一入口。
+
+- **跟随智能体**（`follow`）：保留智能体默认聊天风格。
+- **预置风格**：自然随和 `friendly`、温柔体贴 `caring`、理性清晰 `analytical`、轻松幽默 `playful`、简洁干练 `concise`、好奇探索 `curious`。
+- **自定义人设**（`custom`）：输入性格、说话方式及聊天习惯（最多 2000 字）。切换到预置后原文会保留。
+
+在 `cordis.patch.yml` 中也可直接配置。例如选用预置风格：
+
+```yaml
+personaPreset: analytical
+```
+
+自定义风格：
+
+```yaml
+personaPreset: custom
+persona: '你是一位稳重、幽默、善于倾听的聊天伙伴，回答简短自然。'
+```
+
+人设只作用于**本机接入该房间的 Agent**；其他成员各自设置。保存后下一轮自动接话生效，旧会话保留。升级前填写的 `persona` 字段会自动视作自定义人设，原文本保留。
+
 ## 三、DSH 内置聊天插件：聊天面板与设置面板
 
 安装后使用 DSH 左侧栏「鱼房间」进入内置聊天室。聊天页右上角「房间设置」打开插件配置，DSH 设置页的「鱼房间」分区同样可编辑。独立地址是兼容入口：
@@ -77,6 +100,7 @@ http://127.0.0.1:3080/fish-room
 | **未读 + 通知** | 页面不在前台时累计未读，浏览器授权后弹系统通知 |
 | **搜索 / 导出** | 界面里搜历史（人名、关键词）；一键导出 md / json |
 | **权限分级** | 每房间 `allow`（白名单）/ `deny`（黑名单）/ `owner`；非白名单只记录不接话 |
+| **聊天人设** | 每个房间的本机 Agent 可选跟随、6 种预置风格、自定义输入；保存后下一轮接话生效 |
 | **流式草稿** | agent 正在写时界面显示「…对方正在想…」，并滚动显示已写出的草稿 |
 | **AGENTS.md** | 房间 agent 的工作目录默认是 `DSH_HOME`，因此 `~/.dsh/AGENTS.md` 的人格会自动带上 |
 | **断点续聊** | 会话 id 只由房间名派生，重启后自动 resume 同一条对话 |
@@ -145,7 +169,7 @@ curl -X POST http://127.0.0.1:3080/fish-room/send \
 ## 八、界面验证与运行边界
 
 - 主要入口是 `client.js` 注入 DSH 的 `main` 聊天面板与 `settings.section` 插件设置分区。`index.js` 提供实际通信接口、设置热生效与独立页兼容入口，视觉共用 `/fish-room/ui.css`。
-- `node --check index.js && node --check client.js && node --test tests/chat-ui.test.mjs tests/room-settings.test.mjs` 验证代码语法、聊天核心路径、房间配置保存与运行态重连；CI 还在三种屏宽运行 Chromium，检查内置聊天、设置弹层和 DSH 设置分区，并保留截图。
+- `node --check index.js && node --check client.js && node --test tests/chat-ui.test.mjs tests/room-settings.test.mjs tests/persona.test.mjs` 验证代码语法、聊天核心路径、房间配置保存与运行态重连；CI 还在三种屏宽运行 Chromium，检查内置聊天、设置弹层和 DSH 设置分区，并保留截图。
 - 历史消息的界面默认读取最近 200 条；搜索服务针对房间内当前缓存的记录执行筛选，可能显示最近 200 条匹配结果。
 - 浏览器通知须获得浏览器授权；中继断开时房间仍可查看已有记录，发送失败会保留草稿。
 - 浏览器中显示附件时优先使用可访问的远程附件地址或消息内的内嵌数据；本机文件绝对路径只供本地 Agent 使用。
