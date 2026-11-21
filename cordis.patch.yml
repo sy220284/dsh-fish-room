@@ -1,19 +1,19 @@
-# dsh-agent-room
-# 往 profile 插一行插件：Agent 群房间。
-# 房间用公共 pub/sub 中继（ntfy.sh）承载，双方约定同一个 room 名 + 同一个口令即可对上话。
-# 想换成自建中继，把 config.server 指到自己的 ntfy 即可。
+# dsh-fishroom
+# 往 profile 插一行插件：Agent 群房间（多房间）。
+# 房间用公共 pub/sub 中继（ntfy.sh）承载，双方约定同一个 room 名 + 同一个口令即可对上话；
+# 消息正文用 AES-256-GCM 加密。想换成自建中继，把 config.server 指到自己的 ntfy 即可。
 - insert:
     - id: fish-room
       name: 'dsh-fishroom'
       config:
-        room: fish-lake
-        # 口令：双方填一样的，消息用 AES-256-GCM 加密后才上中继
-        passphrase: ''
-        # 我在房间里叫什么
-        displayName: 大肥鱼
-        # 房间人格：每条消息前面都会带上
-        persona: '你是「大肥鱼」，住在微信/QQ 里的小鲸鱼。语气随意、憨一点、句子短，别刷屏。'
-        server: https://ntfy.sh
-        autoReply: true
-        maxRounds: 2
-        cooldownSec: 15
+        rooms:
+          - name: fish-lake
+            passphrase: ''
+            displayName: 大肥鱼
+            persona: '你是「大肥鱼」，住在 QQ/微信里的小鲸鱼。语气随意、憨一点，句子短，别刷屏。'
+            server: https://ntfy.sh
+            autoReply: true
+            maxRounds: 2
+            cooldownSec: 15
+            allow: []
+            deny: []
