@@ -149,6 +149,9 @@ window.__ModuleLoader__.load({
       var st3 = useState(false)
       var sending = st3[0]
       var setSending = st3[1]
+      var st4 = useState(false)
+      var typing = st4[0]
+      var setTyping = st4[1]
       var boxRef = useRef(null)
       var seenIds = useRef({})
 
@@ -173,6 +176,8 @@ window.__ModuleLoader__.load({
                 reload()
               } else if (p && p.type === 'status') {
                 reload()
+              } else if (p && p.type === 'typing') {
+                setTyping(!!p.on)
               }
             } catch (err) { /* 忽略坏包 */ }
           }
@@ -212,7 +217,9 @@ window.__ModuleLoader__.load({
         h('div', { style: s.head },
           h('span', { style: data.connected ? s.dotOn : s.dot }),
           h('div', { style: s.title }, data.room || '鱼房间'),
-          h('span', { style: s.chip }, (members.length || 0) + ' 人在房间里'),
+          h('span', { style: s.chip },
+            (members.length || 0) + ' 人在房间里' +
+            (members.length ? '：' + members.slice(0, 3).map(m => m.name).join('、') + (members.length > 3 ? '…' : '') : '')),
           h('span', { style: s.chip }, '我是 ' + ((data.me && data.me.name) || 'agent')),
           h('span', { style: { flex: 1 } }),
           h('button', { style: s.ghost, onClick: function () { reload() } }, '刷新')
@@ -243,6 +250,8 @@ window.__ModuleLoader__.load({
           h('button', { style: s.ghost, onClick: function () { setDraft('说说你自己'); } }, '说说你自己'),
           h('button', { style: s.ghost, onClick: function () { setDraft('来聊聊最近的事'); } }, '来聊聊最近的事')
         ),
+
+        typing ? h('div', { style: { color: C.sub, fontSize: 12, paddingLeft: 4 } }, '…对方正在想…') : null,
 
         h('div', { style: { display: 'flex', gap: 8, alignItems: 'flex-end' } },
           h('textarea', {
@@ -294,6 +303,8 @@ window.__ModuleLoader__.load({
           displayName: cfg.displayName,
           persona: cfg.persona,
           server: cfg.server,
+          provider: cfg.provider || '',
+          model: cfg.model || '',
           autoReply: !!cfg.autoReply,
           maxRounds: Number(cfg.maxRounds || 2),
           cooldownSec: Number(cfg.cooldownSec || 15),
@@ -342,6 +353,15 @@ window.__ModuleLoader__.load({
 
         h('div', { style: s.label }, '中继地址（公共 ntfy / 自建都行）'),
         h('input', { className: 'x', style: s.field, value: cfg.server || '', onChange: function (e) { set('server', e.target.value) } }),
+
+        h('div', { style: { display: 'flex', gap: 12 } },
+          h('div', { style: { flex: 1 } },
+            h('div', { style: s.label }, 'Provider（留空=跟宿主默认）'),
+            h('input', { className: 'x', style: s.field, value: cfg.provider || '', placeholder: '例如 minimax-cn', onChange: function (e) { set('provider', e.target.value) } })),
+          h('div', { style: { flex: 1 } },
+            h('div', { style: s.label }, 'Model（留空=跟宿主默认）'),
+            h('input', { className: 'x', style: s.field, value: cfg.model || '', placeholder: '例如 MiniMax-M3.1-Flash', onChange: function (e) { set('model', e.target.value) } }))
+        ),
 
         h('div', { style: { display: 'flex', gap: 16, alignItems: 'center', marginTop: 12, flexWrap: 'wrap' } },
           h('label', { style: { display: 'inline-flex', gap: 6, alignItems: 'center', cursor: 'pointer' } },

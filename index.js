@@ -16,7 +16,7 @@
  */
 
 import { createHash, createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto'
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { appendFileSync, chmodSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -37,6 +37,7 @@ const DEFAULTS = {
     maxRounds: 2, // 一条消息最多引发几轮来回
     cooldownSec: 15, // 两次自动回复的最小间隔
     cwd: '', // 房间会话工作目录
+    turnTimeoutSec: 180, // 一轮接话的最长等待（超时释放，避免房间卡死）
     provider: '', // 房间 agent 用哪个 provider；留空 = 跟宿主默认
     model: '', // 同上；model
     reasoningEffort: '', // 同上；思考强度
@@ -46,6 +47,7 @@ const HOME = process.env.DSH_HOME || join(homedir(), '.dsh')
 const DATA_DIR = join(HOME, 'plugins-data', 'fish-room')
 const ROOM_JSON = join(DATA_DIR, 'room.json')
 const HISTORY_FILE = join(DATA_DIR, 'messages.jsonl')
+const CURSOR_FILE = join(DATA_DIR, 'cursor.json')
 const LOG_FILE = join(DATA_DIR, 'room.log')
 
 function log(...a) {
@@ -111,21 +113,49 @@ export function apply(ctx, config) {
     function loadHistory() {
         try {
             if (!existsSync(HISTORY_FILE)) return
-            const lines = readFileSync(HISTORY_FILE, 'utf8').split('\n').filter(Boolean).slice(-200)
-            for (const l of lines) {
+            const lines = readFileSync(HISTORY_FILE, 'utf8').split('\n').filter(Boolean)
+            historyLines = lines.length
+            for (const l of lines.slice(-200)) {
                 try { messages.push(JSON.parse(l)) } catch { /* 坏行跳过 */ }
             }
         } catch { /* ignore */ }
     }
 
+    let historyLines = 0
+
     function persistMessage(m) {
         try {
             mkdirSync(DATA_DIR, { recursive: true })
             appendFileSync(HISTORY_FILE, JSON.stringify(m) + '\n', 'utf8')
+            historyLines += 1
+            // 太长了就重写一遍，只留最近 1000 条
+            if (historyLines > 3000) {
+                const keep = messages.slice(-1000)
+                writeFileSync(HISTORY_FILE, keep.map(x => JSON.stringify(x)).join('\n') + '\n', 'utf8')
+                historyLines = keep.length
+            }
         } catch { /* ignore */ }
     }
 
     loadHistory()
+
+    // ── 游标：最后处理过的中继消息 ──────────────────────────
+    // 没有它，重连或重启后 since=all 会把整个房间历史重放一遍，
+    // agent 就会对每条旧消息重新答一遍。
+    let cursor = readJsonFile(CURSOR_FILE, {})
+    // 没有游标时，用本地历史最后一条的时间当基准：
+    // 中继上比我们已知历史更老的消息直接跳过（否则一装上就把整个房间旧消息重放一遍）
+    if (!cursor.ts) {
+        const last = messages[messages.length - 1]
+        cursor.ts = last ? Number(last.ts || 0) : Date.now() - 600000
+    }
+    function saveCursor(id, ts) {
+        cursor = { id: id || cursor.id, ts: Number(ts || cursor.ts || 0) }
+        try {
+            mkdirSync(DATA_DIR, { recursive: true })
+            writeFileSync(CURSOR_FILE, JSON.stringify(cursor), 'utf8')
+        } catch { /* ignore */ }
+    }
 
     // ── 加解密 ─────────────────────────────────────────────
     function encrypt(obj) {
@@ -195,7 +225,8 @@ export function apply(ctx, config) {
         const myGen = gen
         while (!stopped && gen === myGen) {
             try {
-                const res = await fetch(`${cfg.server}/${topic}/sse?since=all`, {
+                const since = cursor.id ? `&since=${encodeURIComponent(cursor.id)}` : '&since=all'
+                const res = await fetch(`${cfg.server}/${topic}/sse?since=${since}`, {
                     headers: { Accept: 'text/event-stream' },
                 })
                 if (!res.ok || !res.body) throw new Error(`订阅返回 ${res.status}`)
@@ -257,6 +288,7 @@ export function apply(ctx, config) {
         persistMessage(m)
         touchMember(m.fromName)
         broadcast({ type: 'message', message: m })
+        saveCursor(id, m.ts)
         log(`房间消息｜${m.fromName}：${m.text.slice(0, 60)}`)
 
         if (!cfg.autoReply) return
@@ -371,6 +403,7 @@ export function apply(ctx, config) {
         if (!handle) return ''
         spokeThisTurn = false
         const who = msg.fromName || '对方'
+        broadcast({ type: 'typing', name: selfName, on: true })
         const recent = messages.slice(-9, -1).map(m => `${m.fromName}：${m.text}`).join('\n')
         handle.agent.followup({
             // 消息必须带 id：会话持久化校验要求「identified message」，否则这条会话以后没法 resume
@@ -391,7 +424,20 @@ export function apply(ctx, config) {
             }],
             source: { kind: 'user' },
         })
-        await handle.agent.whenIdle()
+        const budgetMs = Math.max(15, Number(cfg.turnTimeoutSec || 180)) * 1000
+        let timer = null
+        const timeout = new Promise((resolve) => {
+            timer = setTimeout(() => resolve('__timeout__'), budgetMs)
+            timer.unref?.()
+        })
+        const outcome = await Promise.race([handle.agent.whenIdle(), timeout])
+        broadcast({ type: 'typing', name: selfName, on: false })
+        if (timer) clearTimeout(timer)
+        if (outcome === '__timeout__') {
+            log(`接话超时（${budgetMs / 1000}s），这轮不采纳回复`)
+            try { handle.agent.cancel({ kind: 'user' }) } catch { /* ignore */ }
+            return ''
+        }
         return lastAssistantText(handle)
     }
 
@@ -669,6 +715,7 @@ load();setInterval(load,15000)
             try {
                 mkdirSync(DATA_DIR, { recursive: true })
                 writeFileSyncSafe(ROOM_JSON, JSON.stringify(next, null, 2))
+                try { chmodSync(ROOM_JSON, 0o600) } catch { /* ignore */ }
             } catch (e) {
                 writeJson(res, 500, { error: `写配置失败：${e?.message || e}` })
                 return
