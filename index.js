@@ -313,7 +313,8 @@ export function apply(ctx, config) {
         // 与 main 已上线的会话句柄修复保持一致：等待旧房间真正收尾后再创建新会话。
         let prevTeardown = null
         if (prev && typeof prev.dispose === 'function') {
-            try { prevTeardown = Promise.resolve(prev.dispose()).catch((e) => { log('旧实例收尾失败：', e?.message || e) }) } catch { /* ignore */ }
+            try { prevTeardown = Promise.resolve(prev.dispose()).catch((e) => { log('旧实例收尾失败：', e?.message || e) }) }
+            catch (e) { log('旧实例收尾启动失败：', e?.message || e) }
         }
         st.instanceId = prev?.instanceId || instanceId
         st.prevTeardown = prevTeardown
@@ -673,7 +674,7 @@ export function apply(ctx, config) {
             const route = resolveRoute(st)
             const opts = { meta: { cwd: st.cfg.cwd || HOME }, ...(route ? { agentOptions: route } : {}) }
             if (st.prevTeardown) {
-                try { await st.prevTeardown } catch { /* ignore */ }
+                await st.prevTeardown // 失败已经在启动时统一记录，等待关闭完成后继续。
                 st.prevTeardown = null
             }
             await killLive(sid)
