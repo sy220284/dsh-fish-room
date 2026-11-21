@@ -27,6 +27,15 @@ const rooms=[{name:'海湾讨论',connected:true},{name:'协作试验',connected
 const members=[{name:'小青鱼',online:true},{name:'白鲸助手',online:true},{name:'海岸观察员',online:false}]
 const personaChoices=personaPreviewCatalog
 
+const uiGroups=[
+  {id:'standard',label:'常用',count:7},
+  {id:'tieba',label:'贴吧',count:3},
+  {id:'thunder',label:'雷霆',count:8},
+  {id:'custom',label:'自定义',count:1},
+]
+const uiSettings={personaGroups:uiGroups,maxRooms:32,maxPersonaLength:2000,
+  sections:['房间信息','连接设置','聊天与自动接话','成员与权限','高级设置']}
+
 let lastSettingsPayload=null
 let settingsRooms=rooms.map(r=>({...r,displayName:'本机小鱼',server:'https://ntfy.sh',transport:'ntfy',topic:'dsh-room-'+r.name,personaPreset:'follow',persona:'',
   hasPassphrase:true,persona:'聊天简短清楚',autoReply:true,maxRounds:2,cooldownSec:15,turnTimeoutSec:180,
@@ -46,15 +55,19 @@ const server=createServer(async(req,res)=>{
       lastSettingsPayload=JSON.parse(Buffer.concat(chunks).toString('utf8'))
       settingsRooms=lastSettingsPayload.rooms.map(r=>({...r,hasPassphrase:!!r.passphrase,connected:true}))
     }
-    res.end(JSON.stringify({ok:true,rooms:settingsRooms,personas:personaChoices}));return
+    res.end(JSON.stringify({ok:true,schemaVersion:2,ui:uiSettings,rooms:settingsRooms,personas:personaChoices}));return
   }
   if(url.pathname==='/fish-room'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(pageHtml);return}
   if(url.pathname==='/fish-room/ui.css'){res.setHeader('Content-Type','text/css; charset=utf-8');res.end(css);return}
   if(url.pathname==='/fish-room/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store'});res.write(': alive\n\n');req.on('close',()=>res.end());return}
   if(url.pathname==='/fish-room/state'){
     res.setHeader('Content-Type','application/json')
-    res.end(JSON.stringify({ok:true,room:url.searchParams.get('room')||rooms[0].name,rooms,me:{id:'self',name:'我'},
-      messages,members,config:{connected:true,typing:false}}));return
+    res.end(JSON.stringify({ok:true,schemaVersion:2,
+      room:url.searchParams.get('room')||rooms[0].name,rooms:rooms.map(r=>({name:r.name,connected:r.connected})),
+      me:{id:'self',name:'我'},messages,members,
+      config:{connected:true,typing:false,draft:'',personaLabel:'跟随智能体'},
+      ui:{connection:{state:'online',label:'已连接',detail:'房间通讯正常'},
+        presence:{online:2,total:3},persona:{id:'follow',label:'跟随智能体'}}}));return
   }
   if(url.pathname==='/fish-room/history'){
     const q=url.searchParams.get('q')||''
