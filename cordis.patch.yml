@@ -4,7 +4,7 @@
 # 想换成自建中继，把 config.server 指到自己的 ntfy 即可。
 - insert:
     - id: fish-room
-      name: 'dsh-fish-room'
+      name: 'dsh-fishroom'
       config:
         room: fish-lake
         # 口令：双方填一样的，消息用 AES-256-GCM 加密后才上中继

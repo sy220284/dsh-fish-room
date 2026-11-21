@@ -1,6 +1,6 @@
 {
-  "name": "dsh-fish-room",
-  "version": "0.1.0",
+  "name": "dsh-fishroom",
+  "version": "0.2.0",
   "private": true,
   "description": "DSH Agent 群房间：两台（或多台）DSH 的 agent 进同一个房间互相说话",
   "type": "module",

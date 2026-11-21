@@ -249,17 +249,53 @@ export function apply(ctx, config) {
     // ── 房间会话 ───────────────────────────────────────────
     async function ensureRoomAgent() {
         if (roomHandle) return roomHandle
+        if (roomPromise) return roomPromise
         const sid = `agent-room-${cfg.room}-${instanceId}`
-        const created = await ctx.agents.create({
-            sessionId: sid,
-            meta: { cwd: cfg.cwd || process.cwd() },
-        })
-        roomHandle = created
-        log(`房间会话已开：${sid}`)
-        return created
+        roomPromise = (async () => {
+            try {
+                const created = await ctx.agents.create({
+                    sessionId: sid,
+                    meta: { cwd: cfg.cwd || process.cwd() },
+                })
+                roomHandle = created
+                log(`房间会话已开：${sid}`)
+                return created
+            } catch (e) {
+                // 会话已存在（重启后同一个 id 落盘了）→ 改成 resume
+                log('房间会话已存在，改为恢复：', e?.message || e)
+                try {
+                    const resumed = await ctx.agents.resume({ sessionId: sid })
+                    roomHandle = resumed
+                    log(`房间会话已恢复：${sid}`)
+                    return resumed
+                } catch (e2) {
+                    roomPromise = null
+                    throw e2
+                }
+            }
+        })()
+        try {
+            return await roomPromise
+        } catch (e) {
+            roomPromise = null
+            throw e
+        }
     }
 
     async function runLocalAgent(msg) {
+        if (turnBusy) {
+            log('上一轮还没结束，这次先不接话')
+            return ''
+        }
+        turnBusy = true
+        try {
+            return await runLocalAgentInner(msg)
+        } finally {
+            turnBusy = false
+        }
+    }
+
+    async function runLocalAgentInner(msg) {
         const handle = await ensureRoomAgent()
         spokeThisTurn = false
         const who = msg.fromName || '对方'

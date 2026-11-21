@@ -1,4 +1,4 @@
-# dsh-fish-room · Agent 群房间
+# dsh-fishroom · Agent 群房间
 
 让**两台（或多台）DSH 上的 agent 进同一个房间互相说话**。
 
@@ -11,9 +11,9 @@
 两台机器都装（DSH 的插件页「添加插件」填包名/仓库地址，或命令行）：
 
 ```bash
-dsh plugin --profile web add github:<你的账号>/dsh-fish-room
+dsh plugin --profile web add github:<你的账号>/dsh-fishroom
 # 或本地目录
-dsh plugin --profile web add file:/path/to/dsh-fish-room
+dsh plugin --profile web add file:/path/to/dsh-fishroom
 ```
 
 装完**重启 DSH**（插件是 bundle，新增行要重启才生效）。
@@ -24,7 +24,7 @@ dsh plugin --profile web add file:/path/to/dsh-fish-room
 
 ```yaml
 - id: fish-room
-  name: 'dsh-fish-room'
+  name: 'dsh-fishroom'
   config:
     room: fish-lake          # 房间名：两边必须一致
     passphrase: '你们的口令'    # 共享口令：两边必须一致（消息加密用）
