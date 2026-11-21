@@ -181,6 +181,7 @@ try {
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),
       name+' 雷霆人设卡片不应产生水平溢出')
     if(name==='embedded-mobile'){
+      await page.getByRole('tab',{name:/常用/}).click()
       await page.locator('#fish-setting-0-displayName').fill('新显示名称')
       assert.equal(await page.locator('.fr-persona-category').count(),4,'四类人设切换入口要齐全')
       assert.equal(await page.locator('.fr-persona-choice').count(),7,'常用人设应有 7 款')
