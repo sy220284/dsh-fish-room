@@ -375,6 +375,7 @@ export function apply(ctx, config) {
         handle.agent.followup({
             // 消息必须带 id：会话持久化校验要求「identified message」，否则这条会话以后没法 resume
             id: `room-msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+            role: 'user', // 持久化校验要求 user/message 带 role
             content: [{
                 type: 'text',
                 text: [
