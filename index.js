@@ -313,7 +313,8 @@ export function apply(ctx, config) {
             schema: {
                 type: 'object',
                 additionalProperties: false,
-                properties: { ok: { type: 'boolean', required: true }, msg: { type: 'string', required: true } },
+                properties: { ok: { type: 'boolean' }, msg: { type: 'string' } },
+                required: ['ok', 'msg'],
             },
             render: (_a, v) => [{ type: 'text', text: v?.ok ? (v.msg || '已发送') : (v?.msg || '失败') }],
         },
@@ -342,9 +343,10 @@ export function apply(ctx, config) {
                 type: 'object',
                 additionalProperties: false,
                 properties: {
-                    ok: { type: 'boolean', required: true },
-                    lines: { type: 'array', required: true, items: { type: 'string' } },
+                    ok: { type: 'boolean' },
+                    lines: { type: 'array', items: { type: 'string' } },
                 },
+                required: ['ok', 'lines'],
             },
             render: (_a, v) => [{ type: 'text', text: (v?.lines || []).join('\n') || '（还没有人说过话）' }],
         },
@@ -505,11 +507,11 @@ es.onmessage=e=>{try{const p=JSON.parse(e.data)
 load();setInterval(load,15000)
 </script></body></html>`
 
-    function registerRoutes() {
+    function registerRoutes(hostCtx) {
         let webServer = null
-        try { webServer = ctx.webServer } catch { webServer = null }
+        try { webServer = hostCtx?.webServer } catch { webServer = null }
         if (!webServer) {
-            try { webServer = ctx.get('webServer') } catch { webServer = null }
+            try { webServer = hostCtx?.get?.('webServer') } catch { webServer = null }
         }
         if (!webServer) {
             log('拿不到 webServer 服务，聊天界面不可用（agent 工具照常）')
@@ -518,7 +520,7 @@ load();setInterval(load,15000)
         const reg = (path, handler) => {
             const doRegister = () => webServer.register({ kind: 'exact', path, handler })
             try {
-                if (typeof ctx.effect === 'function') ctx.effect(doRegister, `fish-room: ${path}`)
+                if (typeof hostCtx?.effect === 'function') hostCtx.effect(doRegister, `fish-room: ${path}`)
                 else doRegister()
             } catch (e) {
                 log(`路由 ${path} 注册失败：${e?.message || e}`)
@@ -611,7 +613,23 @@ load();setInterval(load,15000)
         writeFileSync(file, content, 'utf8')
     }
 
-    registerRoutes()
+    // 聊天界面：延后挂桥。**不能**在本插件 fiber 里 inject（会让插件永久 pending，
+    // 宿主判「插件没激活」→ 整个 Web UI 都不渲染）。官方姿势是 apply 先返回，
+    // 再 setTimeout 里 ctx.inject 拿带 webServer 的作用域。
+    const mountWeb = () => {
+        const deps = ['settings', 'webServer']
+        try {
+            if (typeof ctx.inject === 'function') {
+                ctx.inject(deps, (serverCtx) => registerRoutes(serverCtx))
+                return
+            }
+        } catch (e) {
+            log('inject 失败，退回直接注册：', e?.message || e)
+        }
+        try { registerRoutes(ctx) } catch (e) { log('注册路由失败：', e?.message || e) }
+    }
+    setTimeout(mountWeb, 1200)
+
     void subscribe()
 
     return () => {
