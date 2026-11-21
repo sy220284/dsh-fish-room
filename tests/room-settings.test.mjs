@@ -63,14 +63,14 @@ test('DSH 插件设置保存后立即更新房间、Agent 身份、中继连接�
     server:'https://example.test',transport:'ntfy',topic:'fish-new-topic',
     autoReply:false,passphrase:'******',maxRounds:2,cooldownSec:15,
     turnTimeoutSec:180,allow:['白鲸助手'],deny:[],owner:'',
-    provider:'',model:'',persona:'有条理',cwd:'',
+    provider:'',model:'',persona:'有条理',personaPreset:'analytical',cwd:'',
   }
   const second={
     name:'第二间房',originalName:'',displayName:'协作 Agent',
     server:'https://example.test',transport:'ntfy',topic:'',
     autoReply:false,passphrase:'fresh-secret',maxRounds:2,cooldownSec:15,
     turnTimeoutSec:180,allow:[],deny:[],owner:'',
-    provider:'',model:'',persona:'',cwd:'',
+    provider:'',model:'',persona:'你是一个开朗的旅行者。',personaPreset:'custom',cwd:'',
   }
   const updated=await request('/fish-room/settings','POST',{rooms:[first,second]})
   assert.equal(updated.status,200,JSON.stringify(updated.json))
@@ -81,6 +81,11 @@ test('DSH 插件设置保存后立即更新房间、Agent 身份、中继连接�
   const newState=await request('/fish-room/state?room=%E5%8E%9F%E5%A7%8B%E9%B1%BC%E5%A1%98')
   assert.equal(newState.json.me.name,'新显示名字')
   assert.equal(newState.json.config.topic,'fish-new-topic')
+  assert.equal(newState.json.config.personaPreset,'analytical')
+  assert.equal(newState.json.config.personaLabel,'理性清晰')
+  const secondState=await request('/fish-room/state?room='+encodeURIComponent('第二间房'))
+  assert.equal(secondState.json.config.personaPreset,'custom')
+  assert.equal(secondState.json.config.persona,'你是一个开朗的旅行者。')
   assert.deepEqual(newState.json.config.allow,['白鲸助手'])
   assert.ok(subscriptions.some(url=>url.includes('example.test/fish-new-topic/')),'应重新订阅新的中继主题')
   assert.ok(subscriptions.some(url=>url.includes('example.test/dsh-room-')&&url.includes('/sse')),'新增房间必须立即开始订阅')
@@ -103,5 +108,7 @@ test('DSH 插件设置保存后立即更新房间、Agent 身份、中继连接�
   assert.equal(disk.rooms.length,1)
   assert.equal(disk.rooms[0].name,'第二间房')
   assert.equal(disk.rooms[0].passphrase,'fresh-secret')
+  assert.equal(disk.rooms[0].personaPreset,'custom')
+  assert.equal(disk.rooms[0].persona,'你是一个开朗的旅行者。')
   if(process.platform!=='win32')assert.equal(statSync(cfgFile).mode&0o777,0o600)
 })
