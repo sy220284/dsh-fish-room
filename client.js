@@ -130,6 +130,7 @@ window.__ModuleLoader__.load({
       var errorState = useState(''), error = errorState[0], setError = errorState[1]
       var unreadState = useState(0), unread = unreadState[0], setUnread = unreadState[1]
       var memberState = useState(false), membersExpanded = memberState[0], setMembersExpanded = memberState[1]
+      var settingsState = useState(false), settingsOpen = settingsState[0], setSettingsOpen = settingsState[1]
       var fileRef = useRef(null), textRef = useRef(null), listRef = useRef(null), searchRef = useRef(null)
       var activeRoomRef = useRef(room), meRef = useRef(''), busyRef = useRef(false)
       var draftsRef = useRef({}), seenRef = useRef({}), atBottomRef = useRef(true)
@@ -332,7 +333,8 @@ window.__ModuleLoader__.load({
             h('div', { className: 'fr-head-actions' },
               h('button', { type: 'button', className: 'fr-icon-button' + (searchOpen ? ' is-active' : ''), onClick: function () { if (searchOpen) closeSearch(); else setSearchOpen(true) }, title: '搜索聊天记录', 'aria-label': '搜索聊天记录' }, '⌕'),
               h('button', { type: 'button', className: 'fr-icon-button fr-refresh', onClick: reload, title: '刷新消息', 'aria-label': '刷新消息' }, '↻'),
-              h('button', { type: 'button', className: 'fr-text-button', onClick: function () { window.open('/fish-room/export?room=' + encodeURIComponent(room) + '&fmt=md', '_blank', 'noopener') }, title: '导出当前房间聊天记录' }, '导出记录')
+              h('button', { type: 'button', className: 'fr-text-button', onClick: function () { window.open('/fish-room/export?room=' + encodeURIComponent(room) + '&fmt=md', '_blank', 'noopener') }, title: '导出当前房间聊天记录' }, '导出记录'),
+              h('button', { type: 'button', className: 'fr-text-button fr-settings-entry', onClick: function () { setSettingsOpen(true) }, title: '打开房间设置' }, '房间设置')
             )
           ),
           searchOpen ? h('form', { className: 'fr-search', onSubmit: function (e) { e.preventDefault(); doSearch() } },
@@ -402,146 +404,237 @@ window.__ModuleLoader__.load({
                 h('button', { type: 'button', className: 'fr-send', disabled: busy || (!draft.trim() && !selectedFile) || !room, onClick: send }, busy ? '发送中…' : '发送', h('span', { 'aria-hidden': true }, ' ↗'))
               )
             )
-          )
+          ),
+          settingsOpen ? h('div', { className: 'fr-settings-overlay', role: 'dialog', 'aria-modal': true, 'aria-label': '鱼房间设置' },
+            h(SettingsPanel, { embedded: true, onClose: function () { setSettingsOpen(false); reload() } })
+          ) : null
         )
       )
     }
 
-    // ── 设置分区：多房间 ───────────────────────────────────
-    function SettingsPanel() {
-      var st = useState(null)
-      var rooms = st[0]
-      var setRooms = st[1]
-      var st2 = useState('')
-      var msg = st2[0]
-      var setMsg = st2[1]
-      var st3 = useState('')
-      var pass = st3[0]
-      var setPass = st3[1]
+    // ── 插件设置：同一个组件同时服务于 DSH 设置分区与聊天内弹层 ──
+    function SettingsPanel(props) {
+      props = props || {}
+      var source = useState(null), rooms = source[0], setRooms = source[1]
+      var selectedState = useState(0), selected = selectedState[0], setSelected = selectedState[1]
+      var statusState = useState(''), status = statusState[0], setStatus = statusState[1]
+      var errorState = useState(false), isError = errorState[0], setIsError = errorState[1]
+      var savingState = useState(false), saving = savingState[0], setSaving = savingState[1]
+      var dirtyState = useState(false), dirty = dirtyState[0], setDirty = dirtyState[1]
+      var visibleState = useState(false), showPass = visibleState[0], setShowPass = visibleState[1]
+      var focusRef = useRef(null)
+      var nextId = useRef(1)
 
-      useEffect(function () {
-        api('/fish-room/settings').then(function (j) {
-          if (j && j.ok) setRooms((j.rooms || []).map(function (r) { return Object.assign({}, r) }))
-        }).catch(function () { /* ignore */ })
+      var readSettings = useCallback(function () {
+        setStatus('')
+        return api('/fish-room/settings', { cache: 'no-store' }).then(function (j) {
+          if (!j || !j.ok) throw new Error((j && j.error) || '无法读取房间设置')
+          setRooms((j.rooms || []).map(function (r) { return Object.assign({}, r, { _originalName: r.name, _passphrase: '', _key: 'room-' + nextId.current++ }) }))
+          setDirty(false)
+          return j
+        }).catch(function (e) { setIsError(true); setStatus(e.message || '无法读取配置') })
       }, [])
+      useEffect(function () { readSettings() }, [readSettings])
+      useEffect(function () { if (focusRef.current) focusRef.current.focus() }, [])
 
-      if (!rooms) return h('div', { style: { padding: 20, color: C.sub } }, '正在读取房间配置…')
-
-      var setRoom = function (i, k, v) {
-        setRooms(function (prev) {
-          var next = prev.map(function (r, idx) { return idx === i ? Object.assign({}, r, (function () { var o = {}; o[k] = v; return o })()) : r })
-          return next
+      var update = function (index, key, value) {
+        setRooms(function (current) {
+          return current.map(function (r, i) {
+            if (index !== i) return r
+            var next = Object.assign({}, r)
+            next[key] = value
+            return next
+          })
         })
+        setDirty(true)
+        setStatus('')
+      }
+      var textField = function (r, index, key, title, description, extra) {
+        extra = extra || {}
+        var id = 'fish-setting-' + index + '-' + key
+        return h('div', { className: 'fr-field' + (extra.full ? ' fr-field-full' : '') },
+          h('label', { htmlFor: id }, title),
+          extra.multiline
+            ? h('textarea', { id: id, rows: extra.rows || 3, value: extra.list ? (r[key] || []).join('\n') : (r[key] || ''),
+                placeholder: extra.placeholder || '', onChange: function (e) { update(index, key, extra.list ? e.target.value.split('\n').map(function (v) { return v.trim() }).filter(Boolean) : e.target.value) } })
+            : h('input', { id: id, type: extra.type || 'text', value: r[key] == null ? '' : r[key],
+                min: extra.min, max: extra.max, placeholder: extra.placeholder || '',
+                onChange: function (e) { update(index, key, extra.type === 'number' ? Number(e.target.value) : e.target.value) } }),
+          description ? h('span', { className: 'fr-field-help' }, description) : null
+        )
       }
 
+      var addRoom = function () {
+        setRooms(function (prev) {
+          var used = new Set(prev.map(function (r) { return r.name }))
+          var n = 1
+          while (used.has('新房间-' + n)) n++
+          setSelected(prev.length)
+          return prev.concat([{ name: '新房间-' + n, _key: 'new-' + nextId.current++, _passphrase: '',
+            _originalName: '', displayName: '', persona: '', server: 'https://ntfy.sh', transport: 'ntfy',
+            topic: '', allow: [], deny: [], owner: '', autoReply: true, maxRounds: 2, cooldownSec: 15,
+            turnTimeoutSec: 180, provider: '', model: '', cwd: '' }])
+        })
+        setDirty(true)
+        setStatus('')
+        setShowPass(false)
+      }
+      var removeRoom = function () {
+        if (!rooms || rooms.length < 2) { setIsError(true); setStatus('至少保留一个房间'); return }
+        if (!window.confirm('删除这个房间的配置？保存后将退出该房间，历史记录仍保留在本地。')) return
+        setRooms(function (prev) { return prev.filter(function (_, i) { return i !== selected }) })
+        setSelected(function (value) { return Math.max(0, Math.min(value, rooms.length - 2)) })
+        setDirty(true)
+        setStatus('')
+      }
+      var validate = function () {
+        var seen = {}
+        for (var i = 0; i < rooms.length; i++) {
+          var r = rooms[i]
+          var name = String(r.name || '').trim()
+          if (!name || name.length > 64 || /[\/\\?#\x00-\x1f]/.test(name) || name === '..') return '房间名称需要填写，且不能包含路径符号'
+          if (seen[name]) return '房间名称不能重复：' + name
+          seen[name] = true
+          if (!/^https?:\/\/[^ \t\r\n]+$/i.test(String(r.server || ''))) return '请填写有效的中继地址（http:// 或 https://）'
+          if (!r.displayName || !String(r.displayName).trim()) return '请填写房间「' + name + '」里的显示名字'
+          if (r.maxRounds < 0 || r.maxRounds > 6 || !Number.isInteger(r.maxRounds)) return '最多来回轮次应在 0～6 之间'
+          if (r.cooldownSec < 0 || r.cooldownSec > 300 || !Number.isInteger(r.cooldownSec)) return '接话冷却应在 0～300 秒之间'
+          if (r.turnTimeoutSec < 15 || r.turnTimeoutSec > 600 || !Number.isInteger(r.turnTimeoutSec)) return '回答等待时间应在 15～600 秒之间'
+        }
+        return ''
+      }
       var save = function () {
-        // 口令留空/掩码时，服务端会保留原来的
-        var payload = rooms.map(function (r, i) {
+        if (saving || !rooms) return
+        var issue = validate()
+        if (issue) { setIsError(true); setStatus(issue); return }
+        setSaving(true); setStatus(''); setIsError(false)
+        var payload = rooms.map(function (r) {
           var o = Object.assign({}, r)
-          if (i === 0 && pass) o.passphrase = pass
-          else if (r.hasPassphrase && !r.passphrase) o.passphrase = '******'
+          delete o._key
+          delete o._passphrase
+          delete o._originalName
+          o.originalName = r._originalName || ''
+          o.passphrase = r._passphrase || '******'
+          o.name = r.name.trim()
+          o.displayName = r.displayName.trim()
+          o.server = r.server.trim()
+          o.topic = (r.topic || '').trim()
           return o
         })
-        api('/fish-room/settings', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rooms: payload }),
-        }).then(function (j) {
-          if (j && j.ok) { setMsg('保存好了'); setPass('') }
-          else setMsg('保存失败：' + ((j && j.error) || '未知错误'))
-        }).catch(function (e) { setMsg('保存失败：' + String(e)) })
+        api('/fish-room/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rooms: payload }) })
+          .then(function (j) {
+            if (!j || !j.ok) throw new Error((j && j.error) || '保存失败')
+            setRooms((j.rooms || []).map(function (r) { return Object.assign({}, r, { _originalName: r.name, _passphrase: '', _key: 'room-' + nextId.current++ }) }))
+            setDirty(false); setIsError(false); setShowPass(false)
+            setStatus('配置已保存并应用，连接状态会在页面中更新')
+          }).catch(function (e) { setIsError(true); setStatus(e.message || '保存失败') })
+          .then(function () { setSaving(false) })
       }
 
-      return h('div', { style: { maxWidth: 700, color: C.fg, fontSize: 13.5, lineHeight: 1.6 } },
-        h('div', { style: { fontSize: 16, fontWeight: 600, marginBottom: 4 } }, '鱼房间'),
-        h('div', { style: s.hint },
-          '每个房间对应一组「房间名 + 口令」。两边填一样的就能进同一个屋檐；口令同时是消息的加密密钥，改完立刻生效，不用重启。'),
-
-        rooms.map(function (r, i) {
-          return h('div', {
-            key: r.name + i,
-            style: { border: '1px solid ' + C.line, borderRadius: 12, padding: '12px 14px', marginTop: 14, background: C.card2 },
-          },
-            h('div', { style: { display: 'flex', gap: 10 } },
-              h('div', { style: { flex: 1 } },
-                h('div', { style: s.label }, '房间名（两边一致）'),
-                h('input', { className: 'x', style: s.field, value: r.name || '', onChange: function (e) { setRoom(i, 'name', e.target.value) } })),
-              h('div', { style: { flex: 1 } },
-                h('div', { style: s.label }, '我的名字'),
-                h('input', { className: 'x', style: s.field, value: r.displayName || '', onChange: function (e) { setRoom(i, 'displayName', e.target.value) } }))
-            ),
-            h('div', { style: s.label }, '口令（两边一致；留空则用房间名当密钥）'),
-            h('input', {
-              className: 'x', style: s.field, type: 'password', value: i === 0 ? pass : '',
-              placeholder: r.hasPassphrase ? '（已保存，留空则不改）' : '（未设置）',
-              onChange: function (e) { if (i === 0) setPass(e.target.value); else setRoom(i, 'passphrase', e.target.value) },
-            }),
-            h('div', { style: s.label }, '房间人格（每条消息前都会带上）'),
-            h('textarea', {
-              className: 'x', style: Object.assign({}, s.field, { minHeight: 66, resize: 'vertical' }),
-              value: r.persona || '', onChange: function (e) { setRoom(i, 'persona', e.target.value) },
-            }),
-            h('div', { style: { display: 'flex', gap: 10 } },
-              h('div', { style: { flex: 1 } },
-                h('div', { style: s.label }, '白名单（留空=不限；一行一个名字）'),
-                h('textarea', {
-                  className: 'x', style: Object.assign({}, s.field, { minHeight: 48, resize: 'vertical' }),
-                  value: (r.allow || []).join('\n'),
-                  onChange: function (e) { setRoom(i, 'allow', e.target.value.split('\n').map(function (x) { return x.trim() }).filter(Boolean)) },
-                })),
-              h('div', { style: { flex: 1 } },
-                h('div', { style: s.label }, '黑名单（一行一个名字）'),
-                h('textarea', {
-                  className: 'x', style: Object.assign({}, s.field, { minHeight: 48, resize: 'vertical' }),
-                  value: (r.deny || []).join('\n'),
-                  onChange: function (e) { setRoom(i, 'deny', e.target.value.split('\n').map(function (x) { return x.trim() }).filter(Boolean)) },
-                }))
-            ),
-            h('div', { style: { display: 'flex', gap: 10 } },
-              h('div', { style: { flex: 1 } },
-                h('div', { style: s.label }, 'Provider（留空=跟宿主默认）'),
-                h('input', { className: 'x', style: s.field, value: r.provider || '', placeholder: 'minimax-cn', onChange: function (e) { setRoom(i, 'provider', e.target.value) } })),
-              h('div', { style: { flex: 1 } },
-                h('div', { style: s.label }, 'Model（留空=跟宿主默认）'),
-                h('input', { className: 'x', style: s.field, value: r.model || '', placeholder: 'MiniMax-M3.1-Flash', onChange: function (e) { setRoom(i, 'model', e.target.value) } }))
-            ),
-            h('div', { style: { display: 'flex', gap: 10, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' } },
-              h('label', { style: { display: 'inline-flex', gap: 6, alignItems: 'center', cursor: 'pointer' } },
-                h('input', { type: 'checkbox', checked: !!r.autoReply, onChange: function (e) { setRoom(i, 'autoReply', e.target.checked) } }),
-                h('span', null, '自动接话')),
-              h('div', { style: { width: 110 } },
-                h('div', { style: { fontSize: 11.5, color: C.sub, marginBottom: 3 } }, '最多来回轮次'),
-                h('input', { className: 'x', type: 'number', min: 0, max: 6, style: s.field, value: r.maxRounds ?? 2, onChange: function (e) { setRoom(i, 'maxRounds', Number(e.target.value)) } })),
-              h('div', { style: { width: 130 } },
-                h('div', { style: { fontSize: 11.5, color: C.sub, marginBottom: 3 } }, '接话冷却（秒）'),
-                h('input', { className: 'x', type: 'number', min: 0, max: 300, style: s.field, value: r.cooldownSec ?? 15, onChange: function (e) { setRoom(i, 'cooldownSec', Number(e.target.value)) } })),
-              h('div', { style: { width: 150 } },
-                h('div', { style: { fontSize: 11.5, color: C.sub, marginBottom: 3 } }, '工作目录（默认读 AGENTS.md）'),
-                h('input', { className: 'x', style: s.field, value: r.cwd || '', placeholder: '留空=DSH_HOME', onChange: function (e) { setRoom(i, 'cwd', e.target.value) } }))
-            ),
-            h('button', {
-              style: Object.assign({}, s.ghost, { marginTop: 10 }),
-              onClick: function () { setRooms(function (prev) { return prev.filter(function (_, idx) { return idx !== i }) }) },
-            }, '删掉这个房间')
-          )
-        }),
-
-        h('button', {
-          style: Object.assign({}, s.ghost, { marginTop: 14 }),
-          onClick: function () {
-            setRooms(function (prev) {
-              return prev.concat([{
-                name: 'room-' + (prev.length + 1), displayName: '', persona: '', server: 'https://ntfy.sh',
-                autoReply: true, maxRounds: 2, cooldownSec: 15, allow: [], deny: [],
-              }])
-            })
-          },
-        }, '+ 加一个房间'),
-
-        h('div', { style: { display: 'flex', gap: 10, alignItems: 'center', marginTop: 16 } },
-          h('button', { style: s.btn, onClick: save }, '保存'),
-          msg ? h('span', { style: msg.indexOf('失败') >= 0 ? s.err : s.ok }, msg) : null),
-        h('div', { style: { marginTop: 14, fontSize: 11.5, color: C.sub, opacity: 0.85 } },
-          '聊天界面在左侧栏「鱼房间」里；也可以直接开 ', h('code', null, '/fish-room'), '。')
+      var close = function () {
+        if (dirty && !window.confirm('还有未保存的更改，确定退出设置吗？')) return
+        if (props.onClose) props.onClose()
+      }
+      return h(React.Fragment, null,
+        h('link', { rel: 'stylesheet', href: '/fish-room/ui.css' }),
+        h('div', { className: 'fr-settings' + (props.embedded ? ' fr-settings-embedded' : '') },
+          h('div', { className: 'fr-settings-heading' },
+            h('div', null, h('div', { className: 'fr-kicker' }, 'FISH ROOM · SETTINGS'),
+              h('h2', null, '鱼房间设置'),
+              h('p', null, '管理聊天房间、连接方式、接话行为和成员权限。保存后会更新当前运行的插件。')),
+            props.onClose ? h('button', { type: 'button', className: 'fr-settings-close', onClick: close, 'aria-label': '关闭房间设置' }, '×') : null
+          ),
+          !rooms
+            ? h('div', { className: 'fr-settings-loading', role: 'status' },
+              status ? h('div', { className: 'fr-settings-notice is-error' }, status,
+                h('button', { type: 'button', onClick: readSettings }, '重试')) : '正在读取房间设置…')
+            : h(React.Fragment, null,
+              h('div', { className: 'fr-settings-toolbar' },
+                h('div', { className: 'fr-settings-tabs', role: 'tablist', 'aria-label': '选择房间' },
+                  rooms.map(function (r, i) {
+                    return h('button', { key: r._key, type: 'button', role: 'tab', 'aria-selected': i === selected, className: 'fr-settings-tab' + (i === selected ? ' is-selected' : ''), onClick: function () { setSelected(i); setShowPass(false); setStatus('') } },
+                      h('span', { className: 'fr-room-connection' + (r.connected ? ' is-on' : '') }),
+                      r.name || '未命名房间')
+                  })
+                ),
+                h('button', { type: 'button', className: 'fr-settings-add', onClick: addRoom }, '＋ 新建房间')
+              ),
+              rooms[selected] ? (function (r, i) {
+                return h('div', { key: r._key, className: 'fr-settings-form', role: 'tabpanel' },
+                  h('section', { className: 'fr-settings-card' },
+                    h('div', { className: 'fr-settings-section-head' }, h('span', { className: 'fr-section-num' }, '01'),
+                      h('div', null, h('h3', null, '房间信息'), h('p', null, '用于识别房间和聊天中的身份。'))),
+                    h('div', { className: 'fr-settings-grid' },
+                      textField(r, i, 'name', '房间名称', '参与者使用相同的房间名称与口令才能互相通信。', { placeholder: '例如：海湾讨论' }),
+                      textField(r, i, 'displayName', '我的显示名称', '聊天时其他成员看到的名字。', { placeholder: '例如：小鱼' }),
+                      h('div', { className: 'fr-field fr-field-full' },
+                        h('label', { htmlFor: 'fish-room-pass' }, '房间口令'),
+                        h('div', { className: 'fr-password-row' },
+                          h('input', { id: 'fish-room-pass', type: showPass ? 'text' : 'password', autoComplete: 'new-password',
+                            value: r._passphrase || '', placeholder: r.hasPassphrase ? '已设置，留空表示保留原口令' : '建议设置共享口令',
+                            onChange: function (e) { update(i, '_passphrase', e.target.value) } }),
+                          h('button', { type: 'button', onClick: function () { setShowPass(!showPass) }, 'aria-label': showPass ? '隐藏口令' : '显示口令' }, showPass ? '隐藏' : '显示')),
+                        h('span', { className: 'fr-field-help' }, '口令用于消息加密，请通过可信渠道与其他成员一致设置。'))
+                    )
+                  ),
+                  h('section', { className: 'fr-settings-card' },
+                    h('div', { className: 'fr-settings-section-head' }, h('span', { className: 'fr-section-num' }, '02'),
+                      h('div', null, h('h3', null, '连接设置'), h('p', null, '配置消息传输位置。连接变更后，插件自动重新订阅。'))),
+                    h('div', { className: 'fr-settings-grid' },
+                      h('div', { className: 'fr-field' }, h('label', { htmlFor: 'fish-room-transport' }, '连接方式'),
+                        h('select', { id: 'fish-room-transport', value: r.transport || 'ntfy', onChange: function (e) { update(i, 'transport', e.target.value) } },
+                          h('option', { value: 'ntfy' }, 'ntfy 消息中继'),
+                          h('option', { value: 'http' }, 'HTTP 自建中继'))),
+                      textField(r, i, 'server', '中继地址', 'ntfy 可使用默认服务，自建时填写服务地址。', { placeholder: 'https://ntfy.sh' }),
+                      textField(r, i, 'topic', '中继主题（可选）', '留空时按照房间名称自动生成。', { full: true, placeholder: '自动：dsh-room-房间名' })
+                    )
+                  ),
+                  h('section', { className: 'fr-settings-card' },
+                    h('div', { className: 'fr-settings-section-head' }, h('span', { className: 'fr-section-num' }, '03'),
+                      h('div', null, h('h3', null, '聊天与自动接话'), h('p', null, '控制 Agent 是否自动参与房间对话和回复频率。'))),
+                    h('label', { className: 'fr-settings-switch' },
+                      h('span', null, h('strong', null, '自动接话'), h('small', null, '开启后，Agent 根据房间消息主动生成回复。')),
+                      h('input', { type: 'checkbox', role: 'switch', checked: !!r.autoReply,
+                        onChange: function (e) { update(i, 'autoReply', e.target.checked) } })
+                    ),
+                    h('div', { className: 'fr-settings-grid' },
+                      textField(r, i, 'maxRounds', '最多来回轮次', '范围 0～6，限制连续对聊。', { type: 'number', min: 0, max: 6 }),
+                      textField(r, i, 'cooldownSec', '接话冷却（秒）', '范围 0～300，避免短时间连续接话。', { type: 'number', min: 0, max: 300 }),
+                      textField(r, i, 'persona', '房间聊天人格', '附加到本房间的 Agent 对话指令。', { full: true, multiline: true, rows: 3, placeholder: '例如：聊天友好、简短清楚。' })
+                    )
+                  ),
+                  h('details', { className: 'fr-settings-card fr-settings-disclosure' },
+                    h('summary', null, h('span', { className: 'fr-section-num' }, '04'), h('span', null, h('strong', null, '成员与权限'), h('small', null, '管理成员访问与消息过滤'))),
+                    h('div', { className: 'fr-settings-grid' },
+                      textField(r, i, 'owner', '房间主人（可选）', '显示名称须与实际发言者一致。'),
+                      textField(r, i, 'allow', '允许自动接话的成员', '每行一个名字；留空则允许所有成员。', { multiline: true, list: true }),
+                      textField(r, i, 'deny', '不接话成员', '每行一个名字。', { multiline: true, list: true })
+                    )
+                  ),
+                  h('details', { className: 'fr-settings-card fr-settings-disclosure' },
+                    h('summary', null, h('span', { className: 'fr-section-num' }, '05'), h('span', null, h('strong', null, '高级设置'), h('small', null, '模型和运行环境，通常沿用 DSH 默认配置即可'))),
+                    h('div', { className: 'fr-settings-grid' },
+                      textField(r, i, 'provider', '模型提供方', '可留空，沿用 DSH 默认。'),
+                      textField(r, i, 'model', '模型名称', '可留空，沿用 DSH 默认。'),
+                      textField(r, i, 'cwd', '工作目录', '默认使用 DSH_HOME，以读取 AGENTS.md。', { full: true }),
+                      textField(r, i, 'turnTimeoutSec', '回答等待时间（秒）', '范围 15～600。', { type: 'number', min: 15, max: 600 })
+                    )
+                  ),
+                  h('div', { className: 'fr-settings-danger' },
+                    h('span', null, '不再需要这个房间？'),
+                    h('button', { type: 'button', disabled: rooms.length < 2, onClick: removeRoom }, '移除房间')
+                  )
+                )
+              })(rooms[selected], selected) : null,
+              h('div', { className: 'fr-settings-savebar' },
+                h('span', { className: 'fr-settings-feedback' + (isError ? ' is-error' : ''), role: isError ? 'alert' : 'status' }, status || (dirty ? '有尚未保存的更改' : '配置已同步')),
+                h('div', { className: 'fr-settings-save-actions' },
+                  dirty ? h('button', { type: 'button', className: 'fr-settings-cancel', disabled: saving, onClick: readSettings }, '撤销更改') : null,
+                  h('button', { type: 'button', className: 'fr-settings-submit', disabled: saving || !dirty, onClick: save }, saving ? '正在保存…' : '保存并应用')
+                )
+              )
+            )
+        )
       )
     }
 
