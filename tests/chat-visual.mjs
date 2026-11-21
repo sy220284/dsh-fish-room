@@ -167,6 +167,8 @@ try {
     }
     await page.getByRole('button',{name:'房间设置'}).click()
     await page.locator('.fr-settings-overlay .fr-settings').waitFor()
+    await page.locator('.fr-settings-overlay .fr-settings-card').first().waitFor()
+    await page.locator('.fr-settings-overlay .fr-settings-toolbar').waitFor()
     await page.screenshot({path:'screenshots/'+name+'-settings.png',fullPage:true})
     await page.screenshot({path:'screenshots/'+name+'-settings-viewport.png',fullPage:false})
     const settingsLayout=await page.evaluate(()=>({width:document.documentElement.scrollWidth,viewport:innerWidth,
