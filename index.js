@@ -1146,17 +1146,61 @@ export function apply(ctx, config) {
         }
     }
 
+    // 统一接口契约：聊天只返回页面需要的显示状态；完整配置由设置接口单独提供。
+    const UI_SCHEMA_VERSION = 2
+    const PERSONA_GROUP_LABELS = Object.freeze({
+        standard: '常用', tieba: '贴吧', thunder: '雷霆', custom: '自定义',
+    })
+    const PERSONA_GROUPS = Object.entries(PERSONA_GROUP_LABELS).map(([id, label]) => ({
+        id, label, count: PUBLIC_PERSONAS.filter(p => p.group === id).length,
+    }))
+    function viewRoom(st) {
+        return { name: st.cfg.name, connected: !!st.connected }
+    }
+    function viewConfig(st) {
+        return {
+            connected: !!st.connected, typing: !!st.typing,
+            draft: st.draft || '',
+            personaLabel: PERSONA_BY_ID.get(selectedPersonaId(st.cfg))?.label || '跟随智能体',
+        }
+    }
+    function viewState(st, members) {
+        const online = members.filter(m => m.online).length
+        return {
+            connection: {
+                state: st.connected ? 'online' : 'offline',
+                label: st.connected ? '已连接' : '连接中断',
+                detail: st.connected ? '房间通讯正常' : '正在等待房间连接',
+            },
+            presence: { online, total: members.length },
+            persona: { id: selectedPersonaId(st.cfg),
+                label: PERSONA_BY_ID.get(selectedPersonaId(st.cfg))?.label || '跟随智能体' },
+        }
+    }
+    function settingsPayload() {
+        return {
+            ok: true, schemaVersion: UI_SCHEMA_VERSION,
+            rooms: [...states.values()].map(publicRoom), personas: PUBLIC_PERSONAS,
+            ui: {
+                personaGroups: PERSONA_GROUPS,
+                maxRooms: 32, maxPersonaLength: 2000,
+                sections: ['房间信息', '连接设置', '聊天与自动接话', '成员与权限', '高级设置'],
+            },
+        }
+    }
+
     function statePayload(room) {
         const st = states.get(room) || states.get(defaultRoom())
         if (!st) return { ok: false }
+        const members = [...st.members.values()].sort((a, b) => b.lastSeen - a.lastSeen)
         return {
-            ok: true,
+            ok: true, schemaVersion: UI_SCHEMA_VERSION,
             room: st.cfg.name,
-            rooms: [...states.values()].map(publicRoom),
+            rooms: [...states.values()].map(viewRoom),
             me: { id: st.instanceId, name: st.cfg.displayName || 'agent' },
-            members: [...st.members.values()].sort((a, b) => b.lastSeen - a.lastSeen),
-            messages: st.messages.slice(-200),
-            config: publicRoom(st),
+            members, messages: st.messages.slice(-200),
+            config: viewConfig(st),
+            ui: viewState(st, members),
         }
     }
 
@@ -1237,7 +1281,7 @@ export function apply(ctx, config) {
         reg('/fish-room/settings', async (req, res) => {
             if (!isTrusted(req)) { writeJson(res, 403, { error: 'forbidden' }); return }
             if (String(req.method).toUpperCase() === 'GET') {
-                writeJson(res, 200, { ok: true, rooms: [...states.values()].map(publicRoom), personas: PUBLIC_PERSONAS })
+                writeJson(res, 200, settingsPayload())
                 return
             }
             if (String(req.method).toUpperCase() !== 'POST') {
@@ -1275,7 +1319,7 @@ export function apply(ctx, config) {
                 writeJson(res, 500, { error: '保存或应用房间配置失败：' + (e?.message || e) })
                 return
             }
-            writeJson(res, 200, { ok: true, rooms: [...states.values()].map(publicRoom), personas: PUBLIC_PERSONAS })
+            writeJson(res, 200, settingsPayload())
         })
 
         reg('/fish-room/send', async (req, res) => {
