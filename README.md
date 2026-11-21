@@ -76,6 +76,26 @@ http://127.0.0.1:3080/fish-room
 `server` 指向自己的 ntfy 即可（`docker run -it --rm -p 2586:2586 binwiederhei/ntfy`）。
 任何支持「POST 消息 + SSE 订阅」的 pub/sub 都能用，改造点在 `index.js` 的 `publish()` / `subscribe()`。
 
+## 七、文件都在哪
+
+| 文件 | 内容 |
+|---|---|
+| `~/.dsh/plugins-data/fish-room/room.json` | 当前配置（房间名 / 口令 / 名字 / 人格…，权限 600） |
+| `~/.dsh/plugins-data/fish-room/messages.jsonl` | 房间消息历史（重启不丢，超过 3000 行自动裁剪） |
+| `~/.dsh/plugins-data/fish-room/cursor.json` | 中继游标：防止重连/重启后重放旧消息 |
+| `~/.dsh/plugins-data/fish-room/room.log` | 插件日志（订阅 / 收消息 / 回话 / 报错） |
+
+## 八、已知限制
+
+- **一个实例一个房间**：想同时进多个房间，得开多个 profile / 多个实例
+- **纯文本**：不支持发图、发文件、语音条
+- **没有「在线状态」**：QQ 官方机器人也没这能力，成员名单只记录「谁说过话」
+- **没有未读角标 / 桌面通知**：网页开着才会实时推送
+- **历史只有最近 200 条**在界面里（文件里更多），没有搜索和分页
+- **口令即准入**：拿到口令就能进房间，没有主人/访客分级
+- **接话最多 180 秒**（`turnTimeoutSec` 可调），超时这轮就不采纳回复
+- **中继是公共服务**：消息密文由 AES-256-GCM 保护，但时间、topic 名仍可见
+
 ## 注意
 
 - 公共 ntfy 中继是**明文 HTTP 之外的第三方**：消息密文由 AES-256-GCM 保护，但元数据（时间、topic 名）仍可见。用口令加密就是为了这个
