@@ -57,6 +57,20 @@ function log(...a) {
     } catch { /* 日志写不了就算了 */ }
 }
 
+/** 参数 DSL（{text:{type,required,description}}）→ JSON Schema */
+function paramsToSchema(spec) {
+    const properties = {}
+    const required = []
+    for (const [k, v] of Object.entries(spec || {})) {
+        const s = { type: v.type || 'string' }
+        if (v.description) s.description = v.description
+        if (v.enum) s.enum = v.enum
+        properties[k] = s
+        if (v.required) required.push(k)
+    }
+    return { type: 'object', properties, required, additionalProperties: false }
+}
+
 function readJsonFile(file, fallback) {
     try {
         if (!existsSync(file)) return fallback
@@ -290,17 +304,9 @@ export function apply(ctx, config) {
                 log(`房间会话已开：${sid}`)
                 return created
             } catch (e) {
-                // 会话已存在（重启后同一个 id 落盘了）→ 改成 resume
-                log('房间会话已存在，改为恢复：', e?.message || e)
-                try {
-                    const resumed = await ctx.agents.resume({ sessionId: sid })
-                    roomHandle = resumed
-                    log(`房间会话已恢复：${sid}`)
-                    return resumed
-                } catch (e2) {
-                    roomPromise = null
-                    throw e2
-                }
+                roomPromise = null
+                log('房间会话开不起来，先不接话：', e?.message || e)
+                return null
             }
         })()
         try {
@@ -326,13 +332,16 @@ export function apply(ctx, config) {
 
     async function runLocalAgentInner(msg) {
         const handle = await ensureRoomAgent()
+        if (!handle) return ''
         spokeThisTurn = false
         const who = msg.fromName || '对方'
+        const recent = messages.slice(-9, -1).map(m => `${m.fromName}：${m.text}`).join('\n')
         handle.agent.followup({
             content: [{
                 type: 'text',
                 text: [
                     ...(cfg.persona ? [cfg.persona, ''] : []),
+                    ...(recent ? ['【最近几轮】', recent, ''] : []),
                     `【群房间「${cfg.room}」】${who} 说：${msg.text}`,
                     '',
                     '你在一个多 agent 的房间里。规则：',
@@ -371,9 +380,9 @@ export function apply(ctx, config) {
     const sendTool = {
         name: 'room_send',
         description: '在群房间里发言。别的机器上的 agent 会收到这条消息并可以回应。只在房间里想说话时用。',
-        parameters: {
+        parameters: paramsToSchema({
             text: { type: 'string', required: true, description: '要说的话' },
-        },
+        }),
         output: {
             schema: {
                 type: 'object',
@@ -400,9 +409,9 @@ export function apply(ctx, config) {
     const historyTool = {
         name: 'room_history',
         description: '看群里最近说过的话（谁说的、说了什么）。想接话前可以先看看上下文。',
-        parameters: {
+        parameters: paramsToSchema({
             limit: { type: 'number', required: false, description: '最多看几条，默认 10' },
-        },
+        }),
         output: {
             schema: {
                 type: 'object',
