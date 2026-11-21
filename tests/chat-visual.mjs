@@ -24,8 +24,18 @@ const messages=[
 ]
 const rooms=[{name:'海湾讨论',connected:true},{name:'协作试验',connected:true},{name:'归档回看',connected:false}]
 const members=[{name:'小青鱼',online:true},{name:'白鲸助手',online:true},{name:'海岸观察员',online:false}]
+const personaChoices=[
+  {id:'follow',label:'跟随智能体',description:'沿用原有聊天风格',example:'保持原有风格'},
+  {id:'friendly',label:'自然随和',description:'亲切自然',example:'嗯，接着说'},
+  {id:'caring',label:'温柔体贴',description:'温暖倾听',example:'我在听'},
+  {id:'analytical',label:'理性清晰',description:'逻辑明确',example:'我们逐个看'},
+  {id:'playful',label:'轻松幽默',description:'有趣机灵',example:'有意思'},
+  {id:'concise',label:'简洁干练',description:'短而准确',example:'先说结论'},
+  {id:'curious',label:'好奇探索',description:'共同探索',example:'换个角度'},
+  {id:'custom',label:'自定义人设',description:'自己编写',example:'按输入内容聊天'},
+]
 let lastSettingsPayload=null
-let settingsRooms=rooms.map(r=>({...r,displayName:'本机小鱼',server:'https://ntfy.sh',transport:'ntfy',topic:'dsh-room-'+r.name,
+let settingsRooms=rooms.map(r=>({...r,displayName:'本机小鱼',server:'https://ntfy.sh',transport:'ntfy',topic:'dsh-room-'+r.name,personaPreset:'follow',persona:'',
   hasPassphrase:true,persona:'聊天简短清楚',autoReply:true,maxRounds:2,cooldownSec:15,turnTimeoutSec:180,
   allow:[],deny:[],owner:'',provider:'',model:'',cwd:''}))
 
@@ -43,7 +53,7 @@ const server=createServer(async(req,res)=>{
       lastSettingsPayload=JSON.parse(Buffer.concat(chunks).toString('utf8'))
       settingsRooms=lastSettingsPayload.rooms.map(r=>({...r,hasPassphrase:!!r.passphrase,connected:true}))
     }
-    res.end(JSON.stringify({ok:true,rooms:settingsRooms}));return
+    res.end(JSON.stringify({ok:true,rooms:settingsRooms,personas:personaChoices}));return
   }
   if(url.pathname==='/fish-room'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(pageHtml);return}
   if(url.pathname==='/fish-room/ui.css'){res.setHeader('Content-Type','text/css; charset=utf-8');res.end(css);return}
@@ -162,9 +172,21 @@ try {
     assert.equal(settingsLayout.saveVisible,true,'保存操作应可用')
     if(name==='embedded-mobile'){
       await page.locator('#fish-setting-0-displayName').fill('新显示名称')
+      assert.equal(await page.locator('.fr-persona-choice').count(),8,'应该显示全部预置与自定义人设')
+      await page.locator('input[type="radio"][value="analytical"]').check()
+      assert.match(await page.locator('.fr-persona-current').textContent(),/理性清晰/)
+      await page.locator('input[type="radio"][value="custom"]').check()
+      await page.locator('#fish-setting-0-persona').fill('你是善于发现故事的旅行者，说话干脆，偶尔幽默。')
+      await page.screenshot({path:'screenshots/embedded-mobile-persona-custom.png',fullPage:true})
+      await page.locator('input[type="radio"][value="friendly"]').check()
+      assert.equal(await page.locator('#fish-setting-0-persona').count(),0,'非自定义模式不应占用输入区')
+      await page.locator('input[type="radio"][value="custom"]').check()
+      assert.equal(await page.locator('#fish-setting-0-persona').inputValue(),'你是善于发现故事的旅行者，说话干脆，偶尔幽默。','切换预置不能丢失自定义内容')
       await page.locator('.fr-settings-submit').click()
       await page.getByText('配置已保存并应用，连接状态会在页面中更新').waitFor()
       assert.equal(lastSettingsPayload.rooms[0].displayName,'新显示名称')
+      assert.equal(lastSettingsPayload.rooms[0].personaPreset,'custom')
+      assert.equal(lastSettingsPayload.rooms[0].persona,'你是善于发现故事的旅行者，说话干脆，偶尔幽默。')
       assert.equal(lastSettingsPayload.rooms[0].originalName,'海湾讨论')
       await page.locator('.fr-settings-close').click()
       await page.locator('.fr-chat-heading').waitFor()
@@ -177,6 +199,7 @@ try {
   await mountDsh(settingsPage,'settings.section')
   await settingsPage.getByRole('heading',{name:'鱼房间设置'}).waitFor()
   assert.equal(await settingsPage.locator('.fr-settings-card').count(),5,'DSH 原设置分区应展示完整的设置结构')
+  assert.equal(await settingsPage.locator('.fr-persona-choice').count(),8,'DSH 设置分区也要包含人设选择')
   await settingsPage.screenshot({path:'screenshots/dsh-settings-section.png',fullPage:true})
   await settingsPage.close()
 } finally {
