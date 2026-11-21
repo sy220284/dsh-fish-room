@@ -549,14 +549,24 @@ export function apply(ctx, config) {
 
     /** 同 id 的活 agent 会占着会话（热重载留下的），先收掉 */
     async function killLive(id) {
+        let killed = false
         try {
             const live = ctx.agents.get?.(id)
             if (live && typeof live.dispose === 'function') {
                 await live.dispose()
-                return true
+                killed = true
             }
         } catch { /* ignore */ }
-        return false
+        try {
+            const list = ctx.agents.list?.() || []
+            for (const h of list) {
+                const sid = h?.agent?.session?.id ?? h?.sessionId
+                if (String(sid) === String(id)) {
+                    try { if (typeof h.dispose === 'function') { await h.dispose(); killed = true } } catch { /* ignore */ }
+                }
+            }
+        } catch { /* ignore */ }
+        return killed
     }
 
     async function ensureRoomAgent(st) {
@@ -580,6 +590,7 @@ export function apply(ctx, config) {
                 log(`房间会话已开：${sid}`)
                 return st.handle
             } catch (e) {
+                log('新建房间会话失败，清占用后重试：', e?.message || e)
                 await killLive(sid)
                 try {
                     st.handle = await ctx.agents.create({ sessionId: sid, ...opts })
