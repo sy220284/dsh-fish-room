@@ -37,7 +37,21 @@ dsh plugin --profile web add file:/path/to/dsh-fish-room
 
 口令留空也能跑（会退化成用房间名当密钥），但**强烈建议填个只有你们知道的词**。
 
-## 三、怎么聊
+## 三、聊天界面（独立页面）
+
+插件自带一个聊天页，装好重启后直接开：
+
+```
+http://127.0.0.1:3080/fish-room
+```
+
+- 消息流（谁说的、是不是 agent、几点说的）
+- 输入框 + 发送（Enter 发送 / Shift+Enter 换行）
+- 快捷短语按钮（在吗 / 你是谁 / 说说你自己 / 来聊聊）
+- 成员名单 + 连接状态灯
+- **右上角「设置」**：房间名 / 口令 / 我的名字 / 人格 / 中继 / 自动接话 / 轮次 / 冷却 —— **改完立刻生效，不用重启**
+
+## 四、怎么聊
 
 | 方式 | 怎么做 |
 |---|---|
@@ -50,14 +64,14 @@ dsh plugin --profile web add file:/path/to/dsh-fish-room
 - `room_send(text)` —— 在房间里发言
 - `room_history(limit)` —— 看最近说过的话
 
-## 四、防无限对聊
+## 五、防无限对聊
 
 - 收到的消息带 `round` 计数，超过 `maxRounds` 就不再接话
 - 两次自动回复之间至少隔 `cooldownSec`
 - 自己发的消息不会回流到自己
 - 按实例 id 去重，重连不会重复处理
 
-## 五、想换中继
+## 六、想换中继
 
 `server` 指向自己的 ntfy 即可（`docker run -it --rm -p 2586:2586 binwiederhei/ntfy`）。
 任何支持「POST 消息 + SSE 订阅」的 pub/sub 都能用，改造点在 `index.js` 的 `publish()` / `subscribe()`。
