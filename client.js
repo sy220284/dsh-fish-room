@@ -10,7 +10,7 @@
  * 全程 try/catch：客户端半边任何一处抛异常都会让整个 Web UI 拒绝渲染。
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-fish-room',
+  id: 'dsh-fishroom',
   factory: (require) => {
     var module = { exports: {} }
     var exports = module.exports

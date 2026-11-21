@@ -20,7 +20,7 @@ import { appendFileSync, chmodSync, mkdirSync, readFileSync, writeFileSync, exis
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-export const name = 'dsh-fish-room'
+export const name = 'dsh-fishroom'
 
 // 注意：sessions 服务用 ctx.get('sessions') 取，别写进 inject —— 它不在可注入名单里，
 // 写进去会让 fiber 一直 pending、apply 永远不跑。
