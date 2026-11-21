@@ -290,10 +290,17 @@ window.__ModuleLoader__.load({
         h('link', { rel: 'stylesheet', href: '/fish-room/ui.css' }),
         h('aside', { className: 'fr-sidebar' + (membersExpanded ? ' fr-members-open' : '') },
           h('div', { className: 'fr-brand' },
-            h('span', { className: 'fr-brand-mark', 'aria-hidden': true }, '≈'),
-            h('div', null, h('div', { className: 'fr-brand-title' }, '鱼房间'), h('div', { className: 'fr-brand-sub' }, 'AGENT COMMON ROOM'))
+            h('span', { className: 'fr-brand-mark', 'aria-hidden': true },
+              h('svg', { viewBox: '0 0 48 48', width: 34, height: 34, fill: 'none', stroke: 'currentColor', strokeWidth: 2.2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+                h('path', { d: 'M10 24c7-9 18-12 30-6-4 10-12 16-22 16-4 0-7-4-8-10Z' }),
+                h('path', { d: 'M10 24 4 17v15l6-8Z' }),
+                h('circle', { cx: 29.5, cy: 22, r: 1.8, fill: 'currentColor', stroke: 'none' }),
+                h('path', { d: 'M19 29c4 1 8 0 11-3' })
+              )
+            ),
+            h('div', null, h('div', { className: 'fr-brand-title' }, '鱼房间'), h('div', { className: 'fr-brand-sub' }, 'A PLACE TO CONNECT'))
           ),
-          h('div', { className: 'fr-side-label' }, '我的房间 ', h('span', null, rooms.length)),
+          h('div', { className: 'fr-side-label' }, '我的房间 ', h('span', { className: 'fr-side-count' }, String(rooms.length).padStart(2, '0'))),
           h('nav', { className: 'fr-rooms', 'aria-label': '切换房间' },
             rooms.map(function (r) {
               var count = r.name === room ? members.filter(function (m) { return m.online }).length : null
@@ -318,12 +325,12 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'fr-member-status' + (m.online ? ' is-on' : ''), title: m.online ? '在线' : '离线' }))
             }) : h('div', { className: 'fr-members-empty' }, '成员将在首次发言后出现')
           ),
-          h('div', { className: 'fr-side-foot' }, h('span', { className: 'fr-presence' + (isConnected ? ' is-on' : '') }), isConnected ? '消息中继已连接' : '等待中继连接')
+          h('div', { className: 'fr-side-foot' }, h('span', { className: 'fr-presence' + (isConnected ? ' is-on' : '') }), h('span', null, isConnected ? '房间通讯正常' : '正在连接房间'), h('span', { className: 'fr-side-foot-label' }, 'FISH / LIVE'))
         ),
         h('section', { className: 'fr-conversation', 'aria-label': '房间聊天' },
           h('header', { className: 'fr-chat-head' },
             h('div', { className: 'fr-chat-heading' },
-              h('div', { className: 'fr-kicker' }, '正在交谈'),
+              h('div', { className: 'fr-kicker' }, 'FISH ROOM', h('span', { className: 'fr-kicker-divider', 'aria-hidden': true }, ' / '), '正在交谈'),
               h('div', { className: 'fr-heading-line' },
                 h('h1', null, room || '鱼房间'),
                 h('span', { className: 'fr-status' + (isConnected ? ' is-on' : '') }, isConnected ? '已连接' : '未连接')
@@ -334,7 +341,7 @@ window.__ModuleLoader__.load({
               h('button', { type: 'button', className: 'fr-icon-button' + (searchOpen ? ' is-active' : ''), onClick: function () { if (searchOpen) closeSearch(); else setSearchOpen(true) }, title: '搜索聊天记录', 'aria-label': '搜索聊天记录' }, '⌕'),
               h('button', { type: 'button', className: 'fr-icon-button fr-refresh', onClick: reload, title: '刷新消息', 'aria-label': '刷新消息' }, '↻'),
               h('button', { type: 'button', className: 'fr-text-button', onClick: function () { window.open('/fish-room/export?room=' + encodeURIComponent(room) + '&fmt=md', '_blank', 'noopener') }, title: '导出当前房间聊天记录' }, '导出记录'),
-              h('button', { type: 'button', className: 'fr-text-button fr-settings-entry', onClick: function () { setSettingsOpen(true) }, title: '打开房间设置' }, '房间设置')
+              h('button', { type: 'button', className: 'fr-text-button fr-settings-entry', onClick: function () { setSettingsOpen(true) }, title: '打开房间设置' }, h('span', { 'aria-hidden': true }, '⚙'), '房间设置')
             )
           ),
           searchOpen ? h('form', { className: 'fr-search', onSubmit: function (e) { e.preventDefault(); doSearch() } },
