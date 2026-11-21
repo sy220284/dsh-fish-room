@@ -41,7 +41,7 @@ test('DSH 插件设置保存后立即更新房间、Agent 身份、中继连接�
   assert.ok(routes.has('/fish-room/state'),'插件应注册聊天接口')
 
   async function request(path,method='GET',body){
-    const req=Readable.from(body?[JSON.stringify(body)]:[])
+    const req=Readable.from(body?[Buffer.from(JSON.stringify(body))]:[])
     req.method=method
     req.url=path
     req.headers={host:'127.0.0.1:3080',origin:'http://127.0.0.1:3080'}
