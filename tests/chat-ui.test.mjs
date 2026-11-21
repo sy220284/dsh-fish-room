@@ -35,6 +35,19 @@ test('独立页、内嵌页具备共同结构与移动断点', () => {
   assert.equal(page.includes('innerHTML'), false, '消息使用安全 DOM 节点渲染')
 })
 
+test('夜潮工作区视觉基线及无障碍基础不应退化', () => {
+  assert.ok(css.includes('鱼房间 · 夜潮工作区'), '应保留统一的产品设计体系')
+  assert.match(css, /--fr-bg:#0d191f/, '背景应使用带蓝调的深色中性层')
+  assert.match(css, /--fr-accent:#8cdec8/, '操作重点色保持一致')
+  assert.ok(css.includes('@media(max-width:800px)'), '必须保持手机单列布局')
+  assert.ok(css.includes('prefers-reduced-motion:reduce'), '减少动态效果的系统偏好必须生效')
+  assert.ok(css.includes('.fr-root button:focus-visible'), '键盘焦点必须清晰可见')
+  assert.ok(clientSource.includes("function UiGlyph(props)"), '操作按钮必须使用统一矢量图标')
+  assert.ok(clientSource.includes("className: 'fr-brand-mark'"), '鱼形品牌标记需要保留')
+  assert.ok(clientSource.includes("className: 'fr-persona-choices'"), '人设选择器必须保留')
+  assert.ok(clientSource.includes("className: 'fr-settings-savebar'"), '设置保存操作不能丢失')
+})
+
 function harness() {
   const elements = new Map()
   class Element {
