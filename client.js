@@ -19,14 +19,14 @@ window.__ModuleLoader__.load({
     var PANEL_ID = 'fish-room'
 
     var C = {
-      card: 'var(--dsw-alias-bg-primary, #1c1d21)',
-      card2: 'var(--dsw-alias-bg-secondary, #24262b)',
-      line: 'var(--dsw-alias-border-l2, rgba(128,128,128,0.28))',
-      fg: 'var(--dsw-alias-text-primary, #e9e9ec)',
-      sub: 'var(--dsw-alias-text-secondary, #9a9aa2)',
-      accent: 'var(--dsw-alias-accent, #5883f1)',
-      mine: 'var(--dsw-alias-accent-soft, #2e364d)',
-      agent: 'var(--dsw-alias-accent-softer, #2b263e)',
+      card: 'var(--dsw-alias-bg-primary, #e6e4de)',
+      card2: 'var(--dsw-alias-bg-secondary, #dfdbd3)',
+      line: 'var(--dsw-alias-border-l2, rgba(138,134,126,0.28))',
+      fg: 'var(--dsw-alias-text-primary, #1b1b21)',
+      sub: 'var(--dsw-alias-text-secondary, #716b5d)',
+      accent: 'var(--dsw-alias-accent, #425994)',
+      mine: 'var(--dsw-alias-accent-soft, #eaecf0)',
+      agent: 'var(--dsw-alias-accent-softer, #eceaf0)',
     }
 
     var s = {
@@ -41,7 +41,7 @@ window.__ModuleLoader__.load({
         borderRadius: 999, padding: '2px 9px',
       },
       dot: { width: 8, height: 8, borderRadius: 999, background: '#666' },
-      dotOn: { width: 8, height: 8, borderRadius: 999, background: '#5c89bd' },
+      dotOn: { width: 8, height: 8, borderRadius: 999, background: '#6482a5' },
       tab: {
         whiteSpace: 'nowrap', border: '1px solid ' + C.line, background: C.card2, color: C.sub,
         borderRadius: 999, padding: '4px 12px', fontSize: 12, cursor: 'pointer',
@@ -59,7 +59,7 @@ window.__ModuleLoader__.load({
         maxWidth: '78%', borderRadius: 13, padding: '8px 12px', background: C.mine,
         border: '1px solid ' + C.line, whiteSpace: 'pre-wrap', wordBreak: 'break-word', alignSelf: 'flex-end',
       },
-      msgAgent: { borderColor: 'rgba(122,92,255,0.55)' },
+      msgAgent: { borderColor: 'rgba(81,66,148,0.55)' },
       msgGuest: { borderStyle: 'dashed' },
       who: { fontSize: 11, color: C.sub, marginBottom: 3 },
       time: { fontSize: 10.5, color: C.sub, marginTop: 4, textAlign: 'right' },
@@ -82,7 +82,7 @@ window.__ModuleLoader__.load({
       label: { fontSize: 12, color: C.sub, margin: '11px 0 5px' },
       hint: { fontSize: 11.5, color: C.sub, opacity: 0.85 },
       err: { fontSize: 12, color: '#e55' },
-      ok: { fontSize: 12, color: '#638cb7' },
+      ok: { fontSize: 12, color: '#6984a1' },
       media: { marginTop: 6, fontSize: 12 },
       img: { maxWidth: 220, borderRadius: 8, display: 'block', marginTop: 6 },
     }
